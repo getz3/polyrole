@@ -58,7 +58,7 @@ pub fn Mux(
     comptime slot_size: usize,
     comptime io_buf_size: usize,
 ) type {
-    const role_count = std.meta.fields(Role).len;
+    const role_count = @typeInfo(Role).@"enum".field_names.len;
 
     return struct {
         const Self = @This();
@@ -138,8 +138,8 @@ pub fn Mux(
                 var buf: [slot_size]u8 = undefined;
                 @memcpy(buf[0..payload_len], data);
 
-                const receiver: Role = @enumFromInt(receiver_byte);
-                const role_idx = @intFromEnum(receiver);
+                const receiver: Role = @fromBackingInt(@intCast(receiver_byte));
+                const role_idx = @backingInt(receiver);
                 self.queues[proto_id][role_idx].put(buf[0..payload_len]);
             }
         }
@@ -156,8 +156,8 @@ pub fn Mux(
             self.send_mutex.lockUncancelable(self.io);
             defer self.send_mutex.unlock(self.io);
             try w.writeInt(u16, proto_id, native_endian);
-            try w.writeByte(@intFromEnum(sender));
-            try w.writeByte(@intFromEnum(receiver));
+            try w.writeByte(@backingInt(sender));
+            try w.writeByte(@backingInt(receiver));
             try w.writeInt(u32, @intCast(encoded.len), native_endian);
             try w.writeAll(encoded);
             try w.flush();
@@ -165,7 +165,7 @@ pub fn Mux(
 
         /// Receive a message.  Blocks on the per-(proto, role) Slot.
         pub fn recv(self: *Self, proto_id: u16, role: Role, state_id: anytype, T: type) !T {
-            const role_idx = @intFromEnum(role);
+            const role_idx = @backingInt(role);
             var buf: [slot_size]u8 = undefined;
             const n = self.queues[proto_id][role_idx].get(&buf);
             var reader = std.Io.Reader.fixed(buf[0..n]);

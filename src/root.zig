@@ -35,9 +35,9 @@ pub fn ProtocolInfo(
     comptime {
         switch (@typeInfo(Role_)) {
             .@"enum" => |E| {
-                for (E.fields) |field| {
-                    if (@hasField(@TypeOf(context_), field.name)) {} else {
-                        @compileError(std.fmt.comptimePrint("{any} does not contain field {s}", .{ context_, field.name }));
+                for (E.field_names) |name| {
+                    if (@hasField(@TypeOf(context_), name)) {} else {
+                        @compileError(std.fmt.comptimePrint("{any} does not contain field {s}", .{ context_, name }));
                     }
                 }
             },
@@ -218,7 +218,7 @@ fn reachableStatesDepthFirstSearch(
                 }
             }
             //If the state has a branch, then the conditions must be met: 1 + receivers.len = internal_roles.len
-            if (@typeInfo(CurrentState).@"union".fields.len > 1) {
+            if (@typeInfo(CurrentState).@"union".field_names.len > 1) {
                 if (info.receiver.len + 1 != internal_roles.len) {
                     @compileError(std.fmt.comptimePrint(
                         "{any}\nIn branch State, {d} roles have not been notified",
@@ -230,8 +230,8 @@ fn reachableStatesDepthFirstSearch(
 
         switch (@typeInfo(CurrentState)) {
             .@"union" => |un| {
-                for (un.fields) |field| {
-                    const NextState = field.type.State;
+                for (un.field_types) |ty| {
+                    const NextState = ty.State;
 
                     if (!states_set.has(NextState)) {
                         // Validate that the handler context type matches (skip for special states like Exit)
@@ -240,8 +240,8 @@ fn reachableStatesDepthFirstSearch(
                             const NextContext = Info.context;
                             const Role = Info.Role;
                             const is_equal: bool = blk: {
-                                for (@typeInfo(Role).@"enum".fields) |F| {
-                                    if (@field(NextContext, F.name) != @field(ExpectedContext, F.name)) {
+                                for (@typeInfo(Role).@"enum".field_names) |name| {
+                                    if (@field(NextContext, name) != @field(ExpectedContext, name)) {
                                         break :blk false;
                                     }
                                 }
@@ -303,7 +303,7 @@ pub const StateMap = struct {
     }
 
     pub fn StateFromId(comptime self: StateMap, comptime state_id: self.StateId) type {
-        return self.states[@intFromEnum(state_id)];
+        return self.states[@backingInt(state_id)];
     }
 
     pub fn idFromState(comptime self: StateMap, comptime State: type) self.StateId {
@@ -346,13 +346,13 @@ pub fn Runner(
             {
                 //It turns out that all roles that do not belong to internal_roles must be notified.
                 //This is equivalent to synchronizing the status once each protocol ends.
-                inline for (0..@typeInfo(Role).@"enum".fields.len) |i| {
-                    const role: Role = @enumFromInt(i);
+                inline for (0..@typeInfo(Role).@"enum".field_names.len) |i| {
+                    const role: Role = @fromBackingInt(@intCast(i));
                     if (comptime std.mem.indexOfScalar(Role, internal_roles, role) == null) {
                         if (mult_channel_static_index_role)
-                            try @field(mult_channel, @tagName(role)).send(state_id, Notify{ .polyrole_notify = @intFromEnum(idFromState(NewState)) })
+                            try @field(mult_channel, @tagName(role)).send(state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) })
                         else
-                            try mult_channel.send(curr_role, role, state_id, Notify{ .polyrole_notify = @intFromEnum(idFromState(NewState)) });
+                            try mult_channel.send(curr_role, role, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
                     }
                 }
             }
@@ -391,7 +391,7 @@ pub fn Runner(
                             else
                                 try mult_channel.recv(curr_role, internal_roles[0], state_id, Notify);
 
-                        const next_state_id: StateId = @enumFromInt(notify.polyrole_notify);
+                        const next_state_id: StateId = @fromBackingInt(@intCast(notify.polyrole_notify));
                         continue :sw next_state_id;
                     } else if (comptime curr_role == sender) {
                         //The current role is the sender, which sends messages to all receivers.
@@ -462,8 +462,8 @@ pub fn Runner(
                                 .@"union" => |U| {
                                     //The current round of communication for this protocol does not involve curr_role.
                                     // However, it still needs to check whether to notify external roles.
-                                    comptime std.debug.assert(U.fields.len == 1);
-                                    const NewState = U.fields[0].type.State;
+                                    comptime std.debug.assert(U.field_names.len == 1);
+                                    const NewState = U.field_types[0].State;
                                     try check_then_notify_extern_roles(
                                         curr_role,
                                         mult_channel_static_index_role,

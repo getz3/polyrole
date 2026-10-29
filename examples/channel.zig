@@ -126,11 +126,11 @@ pub fn MvarChannelMap(Role: type) type {
             gpa: std.mem.Allocator,
             comptime buff_size: usize,
         ) !void {
-            const enum_fields = @typeInfo(Role).@"enum".fields;
+            const enum_fields_len = @typeInfo(Role).@"enum".field_names.len;
             var i: usize = 0;
-            while (i < enum_fields.len) : (i += 1) {
+            while (i < enum_fields_len) : (i += 1) {
                 var j = i + 1;
-                while (j < enum_fields.len) : (j += 1) {
+                while (j < enum_fields_len) : (j += 1) {
                     const mvar_a = try Mvar.init(self.io, gpa, buff_size);
                     const mvar_b = try Mvar.init(self.io, gpa, buff_size);
                     const tmp_buff = try gpa.create(std.Random.Xoshiro256);
@@ -153,7 +153,7 @@ pub fn MvarChannelMap(Role: type) type {
         }
 
         pub fn recv(self: @This(), curr_role: Role, other: Role, state_id: anytype, T: type) !T {
-            const mvar_channel: MvarChannel = self.hashmap.get(.{ @intFromEnum(curr_role), @intFromEnum(other) }).?;
+            const mvar_channel: MvarChannel = self.hashmap.get(.{ @backingInt(curr_role), @backingInt(other) }).?;
             const res = try mvar_channel.recv(state_id, T);
             if (self.log) {
                 std.debug.print("{t} recv: {any}\n", .{ curr_role, res[1] });
@@ -162,7 +162,7 @@ pub fn MvarChannelMap(Role: type) type {
         }
 
         pub fn send(self: @This(), curr_role: Role, other: Role, state_id: anytype, val: anytype) !void {
-            const mvar_channel = self.hashmap.get(.{ @intFromEnum(curr_role), @intFromEnum(other) }).?;
+            const mvar_channel = self.hashmap.get(.{ @backingInt(curr_role), @backingInt(other) }).?;
             const msg_id = self.counter.fetchAdd(1, .seq_cst);
             if (self.log) {
                 std.debug.print("{t} send: {any}\n", .{ curr_role, val });

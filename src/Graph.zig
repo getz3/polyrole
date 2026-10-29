@@ -153,15 +153,15 @@ pub fn initWithFsm(allocator: std.mem.Allocator, comptime State_: type) !Graph {
 
         switch (@typeInfo(State)) {
             .@"union" => |un| {
-                inline for (un.fields) |field| {
-                    const NextState = field.type.State;
+                inline for (un.field_types, un.field_names) |ty, name| {
+                    const NextState = ty.State;
 
-                    const next_state_idx: u32 = @intFromEnum(state_map.idFromState(NextState));
+                    const next_state_idx: u32 = @backingInt(state_map.idFromState(NextState));
 
                     try edges.append(arena_allocator, .{
                         .from = @intCast(state_idx),
                         .to = next_state_idx,
-                        .label = field.name,
+                        .label = name,
                     });
                 }
             },

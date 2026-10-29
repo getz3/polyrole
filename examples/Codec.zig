@@ -4,14 +4,14 @@ const builtin = @import("builtin");
 const native_endian = builtin.target.cpu.arch.endian();
 
 pub fn encode(writer: *std.Io.Writer, state_id: anytype, val: anytype) !void {
-    const id: u32 = @intFromEnum(state_id);
+    const id: u32 = @backingInt(state_id);
     try writer.writeInt(u32, id, native_endian);
     if (@TypeOf(val) == Notify) {
         try writer.writeInt(u32, val.polyrole_notify, native_endian);
     } else {
         switch (val) {
             inline else => |msg, tag| {
-                try writer.writeByte(@intFromEnum(tag));
+                try writer.writeByte(@backingInt(tag));
                 const data = msg.data;
                 try encode_anytype(writer, data);
             },
@@ -23,16 +23,16 @@ pub fn encode(writer: *std.Io.Writer, state_id: anytype, val: anytype) !void {
 pub fn TagPayloadByName(comptime U: type, comptime tag_name: []const u8) type {
     const info = @typeInfo(U).@"union";
 
-    inline for (info.fields) |field_info| {
-        if (comptime std.mem.eql(u8, field_info.name, tag_name))
-            return field_info.type;
+    inline for (info.field_names, info.field_types) |name, ty| {
+        if (comptime std.mem.eql(u8, name, tag_name))
+            return ty;
     }
 
     @compileError("no field '" ++ tag_name ++ "' in union '" ++ @typeName(U) ++ "'");
 }
 
 pub fn decode(reader: *std.Io.Reader, state_id: anytype, T: type) !T {
-    const id: u32 = @intFromEnum(state_id);
+    const id: u32 = @backingInt(state_id);
     const rid = try reader.takeInt(u32, native_endian);
     if (id != rid and T != Notify) {
         std.debug.print("id: {d}, rid: {d}\n", .{ id, rid });
@@ -43,7 +43,7 @@ pub fn decode(reader: *std.Io.Reader, state_id: anytype, T: type) !T {
         return .{ .polyrole_notify = next_id };
     } else {
         const recv_tag_num = try reader.takeByte();
-        const tag: std.meta.Tag(T) = @enumFromInt(recv_tag_num);
+        const tag: std.meta.Tag(T) = @fromBackingInt(@intCast(recv_tag_num));
         switch (tag) {
             inline else => |t| {
                 const Data = @FieldType(TagPayloadByName(T, @tagName(t)), "data");
@@ -64,7 +64,7 @@ pub fn encode_anytype(writer: *std.Io.Writer, data: anytype) !void {
             try writer.writeInt(@TypeOf(data), data, native_endian);
         },
         .pointer => |p| {
-            if (p.is_const == true and p.child == u8) {
+            if (p.attrs.@"const" and p.child == u8) {
                 const len: usize = data.len;
                 try writer.writeInt(usize, len, native_endian);
                 try writer.writeAll(data);
@@ -73,8 +73,8 @@ pub fn encode_anytype(writer: *std.Io.Writer, data: anytype) !void {
             }
         },
         .@"struct" => |stru| {
-            inline for (stru.fields) |struct_field| {
-                try encode_anytype(writer, @field(data, struct_field.name));
+            inline for (stru.field_names) |name| {
+                try encode_anytype(writer, @field(data, name));
             }
         },
         else => @compileError("Not impl!"),
@@ -98,7 +98,7 @@ pub fn decode_type(reader: *std.Io.Reader, Data: type) !Data {
             return data;
         },
         .pointer => |p| {
-            if (p.is_const == true and p.child == u8) {
+            if (p.attrs.@"const" == true and p.child == u8) {
                 const len = try reader.takeInt(usize, native_endian);
                 const str = try reader.take(len);
                 return str;
@@ -108,8 +108,8 @@ pub fn decode_type(reader: *std.Io.Reader, Data: type) !Data {
         },
         .@"struct" => |stru| {
             var data: Data = undefined;
-            inline for (stru.fields) |struct_field| {
-                @field(data, struct_field.name) = try decode_type(reader, struct_field.type);
+            inline for (stru.field_names, stru.field_types) |name, ty| {
+                @field(data, name) = try decode_type(reader, ty);
             }
             return data;
         },
