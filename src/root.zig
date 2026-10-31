@@ -340,8 +340,9 @@ pub fn Runner(
             comptime extern_state: []const type,
             mult_channel: anytype,
         ) !void {
-            //Checks if the new state is an external state and the current role is `internal_roles[0]`.
-            if (comptime std.mem.indexOfScalar(type, extern_state, NewState) != null and
+            //Checks if the new state is an external state (or `Exit`, since the end of a protocol
+            //must be synchronized too) and the current role is `internal_roles[0]`.
+            if ((comptime std.mem.indexOfScalar(type, extern_state, NewState) != null or NewState == Exit) and
                 curr_role == internal_roles[0])
             {
                 //It turns out that all roles that do not belong to internal_roles must be notified.

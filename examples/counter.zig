@@ -1,12 +1,55 @@
 const std = @import("std");
 const polyrole = @import("polyrole");
 const Data = polyrole.Data;
+const channel = @import("channel.zig");
 
-pub fn main() !void {
-    var ctx: i32 = 0;
-    // The meaning of `undefined` here is: the receiver is empty,
-    //  therefore the channel will not be used.
-    try Runner.runProtocol(.a, null, undefined, undefined, curr_id, &ctx);
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const gpa = init.gpa;
+
+    var counter: std.atomic.Value(usize) = .init(0);
+    var mvar_channel_map: MvarChannelMap = .init(io, false, &counter);
+    defer mvar_channel_map.deinit(gpa);
+
+    try mvar_channel_map.generate_all_MvarChannel(gpa, 64);
+
+    //`a` drives the protocol. `b`, `c` and `d` never take part in it:
+    // they are external roles, so they just wait for the `Notify`
+    // that `a` sends when the protocol exits.
+    const a = struct {
+        fn run(mcm: *MvarChannelMap) !void {
+            var ctx: i32 = 0;
+            try Runner.runProtocol(.a, null, false, mcm, curr_id, &ctx);
+        }
+    };
+    const b = struct {
+        fn run(mcm: *MvarChannelMap) !void {
+            var ctx: i32 = 0;
+            try Runner.runProtocol(.b, null, false, mcm, curr_id, &ctx);
+        }
+    };
+    const c = struct {
+        fn run(mcm: *MvarChannelMap) !void {
+            var ctx: i32 = 0;
+            try Runner.runProtocol(.c, null, false, mcm, curr_id, &ctx);
+        }
+    };
+    const d = struct {
+        fn run(mcm: *MvarChannelMap) !void {
+            var ctx: i32 = 0;
+            try Runner.runProtocol(.d, null, false, mcm, curr_id, &ctx);
+        }
+    };
+
+    var a_future = try io.concurrent(a.run, .{&mvar_channel_map});
+    var b_future = try io.concurrent(b.run, .{&mvar_channel_map});
+    var c_future = try io.concurrent(c.run, .{&mvar_channel_map});
+    var d_future = try io.concurrent(d.run, .{&mvar_channel_map});
+
+    try a_future.await(io);
+    try b_future.await(io);
+    try c_future.await(io);
+    try d_future.await(io);
 }
 
 pub const EnterFsmState = A;
@@ -15,6 +58,8 @@ pub const Runner = polyrole.Runner(EnterFsmState);
 pub const curr_id = Runner.idFromState(EnterFsmState);
 
 const Role = enum { a, b, c, d };
+const MvarChannelMap = channel.MvarChannelMap(Role);
+
 const Context = struct {
     a: type = i32,
     b: type = i32,
