@@ -29,7 +29,7 @@ pub fn MkPingPong(
         }
 
         pub const Ping = union(enum) {
-            ping: Data(i32, info.Cast("Pong", server, client, i32, PongFn, @This())),
+            ping: Data(i32, Pong),
             next: Data(void, NextFsmState),
 
             pub const info = pingpogn_info("Ping", client, &.{server});
@@ -54,18 +54,25 @@ pub fn MkPingPong(
             }
         };
 
-        const PongFn = struct {
-            pub fn process(parent_ctx: *@field(context, @tagName(server))) !i32 {
+        pub const Pong = union(enum) {
+            pong: Data(i32, Ping),
+
+            pub const info = pingpogn_info("Pong", server, &.{client});
+
+            pub fn process(parent_ctx: *info.Ctx(server)) !@This() {
                 const ctx = server_ctxFromParent(parent_ctx);
                 ctx.server_counter += 1;
-                return ctx.server_counter;
+                return .{ .pong = .{ .data = ctx.server_counter } };
             }
 
-            pub fn preprocess(parent_ctx: *@field(context, @tagName(client)), val: i32) !void {
+            pub fn preprocess_0(parent_ctx: *info.Ctx(client), msg: @This()) !void {
                 const ctx = client_ctxFromParent(parent_ctx);
-                ctx.client_counter = val;
+                switch (msg) {
+                    .pong => |val| ctx.client_counter = val.data,
+                }
             }
         };
+
         fn client_ctxFromParent(parent_ctx: *@field(context, @tagName(client))) *ClientContext {
             return &@field(parent_ctx, @tagName(client_ctx_field));
         }

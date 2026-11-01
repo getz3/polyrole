@@ -59,34 +59,6 @@ pub fn ProtocolInfo(
         pub fn Ctx(_: @This(), r: Role_) type {
             return @field(context_, @tagName(r));
         }
-
-        const Info = @This();
-
-        pub fn Cast(
-            comptime _: Info,
-            comptime name: []const u8,
-            comptime sender: Role,
-            comptime receiver: Role,
-            comptime T: type,
-            comptime CastFn: type,
-            comptime NextState: type,
-        ) type {
-            return union(enum) {
-                cast: Data(T, NextState),
-
-                pub const info: Info = .{ .name = name, .sender = sender, .receiver = &.{receiver} };
-
-                pub fn process(ctx: *@field(context, @tagName(sender))) !@This() {
-                    return .{ .cast = .{ .data = try CastFn.process(ctx) } };
-                }
-
-                pub fn preprocess_0(ctx: *@field(context, @tagName(receiver)), msg: @This()) !void {
-                    switch (msg) {
-                        .cast => |val| try CastFn.preprocess(ctx, val.data),
-                    }
-                }
-            };
-        }
     };
 }
 
