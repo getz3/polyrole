@@ -32,7 +32,7 @@ This information is not just documentation—it is used by the library for compi
 
 ## State Execution Model: Behavior Determined by Role
 
-At runtime, each role (e.g., `alice`, `bob`) independently runs the `Runner.runProtocol` function, which decides how to act based on the current state and its own role:
+At runtime, each role (e.g., `alice`, `bob`) independently runs the `Runner.symmetric_run` function, which decides how to act based on the current state and its own role:
 
 - **If the role is the sender**: It calls the state's `process` function to generate a message, then sends this message through the channel to all roles in the `receiver` list. It then transitions to the next state specified by the message's `NextState`.
 - **If the role is a receiver**: It receives a message from the channel (from the sender), calls the corresponding preprocess function `preprocess_N` (where N is the role's position in the `receiver` list), and then transitions to the next state specified by the message.

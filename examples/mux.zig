@@ -172,14 +172,14 @@ pub fn Mux(
             return try Codec.decode(&reader, state_id, T);
         }
 
-        /// Create a ProtocolHandle bound to `proto_id` for use with Runner.runProtocol.
+        /// Create a ProtocolHandle bound to `proto_id` for use with Runner.symmetric_run.
         pub fn handle(self: *Self, proto_id: u16) ProtocolHandle(Role, Self) {
             return .{ .mux = self, .proto_id = proto_id };
         }
     };
 }
 
-/// Thin wrapper that implements the `send`/`recv` interface expected by Runner.runProtocol
+/// Thin wrapper that implements the `send`/`recv` interface expected by Runner.symmetric_run
 /// (the same shape as MvarChannelMap), binding a specific proto_id into the Mux calls.
 pub fn ProtocolHandle(comptime Role: type, comptime MuxType: type) type {
     return struct {

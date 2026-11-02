@@ -40,14 +40,14 @@ pub fn main(init: std.process.Init) !void {
     const alice = struct {
         fn run(mcm: *MvarChannelMap) !void {
             var alice_context: AliceContext = .{};
-            try Runner.runProtocol(.alice, null, false, mcm, curr_id, &alice_context);
+            try Runner.symmetric_run(.alice, null, false, mcm, curr_id, &alice_context);
         }
     };
 
     const bob = struct {
         fn run(mcm: *MvarChannelMap) !void {
             var bob_context: BobContext = .{};
-            try Runner.runProtocol(.bob, null, false, mcm, curr_id, &bob_context);
+            try Runner.symmetric_run(.bob, null, false, mcm, curr_id, &bob_context);
         }
     };
 

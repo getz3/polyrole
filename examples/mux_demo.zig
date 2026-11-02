@@ -128,14 +128,14 @@ pub fn main(init: std.process.Init) !void {
             const h0 = try std.Thread.spawn(.{}, struct {
                 fn run(m: *MuxType) !void {
                     var ctx = BobContext{};
-                    try Runner0.runProtocol(.bob, null, false, m.handle(0), id0, &ctx);
+                    try Runner0.symmetric_run(.bob, null, false, m.handle(0), id0, &ctx);
                 }
             }.run, .{&mux});
 
             const h1 = try std.Thread.spawn(.{}, struct {
                 fn run(m: *MuxType) !void {
                     var ctx = BobContext{};
-                    try Runner1.runProtocol(.bob, null, false, m.handle(1), id1, &ctx);
+                    try Runner1.symmetric_run(.bob, null, false, m.handle(1), id1, &ctx);
                 }
             }.run, .{&mux});
 
@@ -165,7 +165,7 @@ pub fn main(init: std.process.Init) !void {
 
         std.debug.print("=== Running Counter (proto 0) ===\n", .{});
 
-        const t1 = try std.Thread.spawn(.{}, Runner0.runProtocol, .{ .alice, null, false, mux.handle(0), id0, &alice_ctx1 });
+        const t1 = try std.Thread.spawn(.{}, Runner0.symmetric_run, .{ .alice, null, false, mux.handle(0), id0, &alice_ctx1 });
         defer t1.join();
 
         var alice_ctx2 = AliceContext{
@@ -179,7 +179,7 @@ pub fn main(init: std.process.Init) !void {
 
         std.debug.print("=== Running Ping (proto 1) ===\n", .{});
 
-        const t2 = try std.Thread.spawn(.{}, Runner1.runProtocol, .{ .alice, null, false, mux.handle(1), id1, &alice_ctx2 });
+        const t2 = try std.Thread.spawn(.{}, Runner1.symmetric_run, .{ .alice, null, false, mux.handle(1), id1, &alice_ctx2 });
         defer t2.join();
     }
 
