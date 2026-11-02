@@ -90,10 +90,10 @@ For example:
 
 ```zig
 const Context = struct {
-    alice: type = AliceContext,
-    bob: type = BobContext,
-    charlie: type = CharlieContext,
-    selector: type = SelectorContext,
+    alice: AliceContext,
+    bob: BobContext,
+    charlie: CharlieContext,
+    selector: SelectorContext,
 };
 ```
 
@@ -194,6 +194,8 @@ pub const Send = union(enum) {
 };
 ```
 
+![sendfile](./data/sendfile.svg)
+
 Three branches, three different continuations — the entire transmission strategy is encoded in these three lines:
 
 - **`.send → @This()`**: Transmit a chunk, then loop back to the same state. The self-reference creates an implicit `while` loop in the state graph, enabling streaming without a dedicated loop construct.
@@ -230,7 +232,6 @@ The `Send` state demonstrates a principle that recurs throughout well-designed P
 
 The protocol is defined in [`examples/protocols/sendfile.zig`](./examples/protocols/sendfile.zig), with TCP setup and file I/O in [`examples/sendfile.zig`](./examples/sendfile.zig).
 
-![sendfile](./data/sendfile.svg)
 
 ---
 
