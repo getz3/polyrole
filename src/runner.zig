@@ -21,6 +21,54 @@ pub fn Runner(
             return state_map.StateFromId(state_id);
         }
 
+        ///Runs every role of the protocol in a single thread, without any channel.
+        ///The sender executes `process` to produce this round's message, then each
+        ///receiver executes `preprocess_N` for its position in `receiver`, and the
+        ///state machine advances until `Exit` is reached. Roles that take no part
+        ///in the current state execute nothing, just like in `symmetric_run`.
+        ///
+        ///`Notify` plays no part here. `symmetric_run` uses it to tell the roles
+        ///outside `internal_roles` which state to jump to when the protocol ends or
+        ///hands over to an `extern_state`; here every role shares the same loop and
+        ///the same `curr_id`, so that hand-over is simply the next iteration and no
+        ///role is left waiting. What `simulate` drops is the notification, not the
+        ///synchronization it stands for: it follows a single execution path, so it
+        ///neither models who is waiting nor checks that every role reaches `Exit`.
+        pub fn simulate(Ctx: type, context: *Ctx, curr_id: StateId) !void {
+            @setEvalBranchQuota(10_000_000);
+            sw: switch (curr_id) {
+                inline else => |state_id| {
+                    const State = StateFromId(state_id);
+                    if (comptime State == Exit) return;
+
+                    const info = comptime State.info;
+                    const sender: Role = comptime info.sender;
+                    const receiver: []const Role = comptime info.receiver;
+
+                    comptime std.debug.assert(Ctx == @TypeOf(info).Context);
+
+                    //The sender produces the message of this round.
+                    const result = try State.process(&@field(context, @tagName(sender)));
+
+                    //The receiver's handler function is chosen by its position in `receiver`,
+                    //the same convention `symmetric_run` follows.
+                    inline for (receiver, 0..) |rvr, idx| {
+                        const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{idx});
+                        if (@hasDecl(State, fn_name)) {
+                            try @field(State, fn_name)(&@field(context, @tagName(rvr)), result);
+                        }
+                    }
+
+                    switch (result) {
+                        inline else => |new_fsm_state_wit| {
+                            const NewState = @TypeOf(new_fsm_state_wit).State;
+                            continue :sw comptime idFromState(NewState);
+                        },
+                    }
+                },
+            }
+        }
+
         pub fn symmetric_run(
             comptime curr_role: Role,
             comptime enter_fn: ?fn (*State_.info.Ctx(curr_role), type) void,
