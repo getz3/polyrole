@@ -160,7 +160,7 @@ A basic two-role alternating communication protocol between Alice and Bob. Alice
 This is the simplest possible multi-role Polyrole example. It demonstrates:
 - **Two-role state machine**: States alternate between `Ping` (Alice as sender) and `Pong` (Bob as sender), showing how `sender` and `receiver` swap between states.
 - **Parameterized protocol factory**: `MkPingPong` is a generic protocol template that can be reused with different roles and exit states.
-- **Cast state**: `PongFn` provides the handler functions; `info.Cast(...)` wraps it into a protocol state — a reusable building block for request-response patterns.
+- **Explicit reply state**: `Pong` is a state in its own right, and `ping: Data(i32, Pong)` names it as the next state while carrying the counter along; `Pong`'s own `pong: Data(i32, Ping)` sends the answer back the same way. Request and response are just two states that point at each other.
 - **Branch and full notification**: `Ping` has two fields (`ping` and `next`). Since both `alice` and `bob` are in `internal_roles`, the branch condition `1 + receiver.len == internal_roles.len` requires that all internal roles are notified — satisfied here because `receiver = &.{bob}`.
 
 The protocol is defined in [`examples/protocols/pingpong.zig`](./examples/protocols/pingpong.zig) as a reusable `MkPingPong` function, and wired into the main entry point in [`examples/pingpong.zig`](./examples/pingpong.zig).
@@ -231,7 +231,6 @@ pub fn process(parent_ctx: *@field(context, @tagName(sender))) !@This() {
 The `Send` state demonstrates a principle that recurs throughout well-designed Polyrole protocols: **the type signature tells the structural story; the handler function fills in the runtime details.** Reading the three union fields, you already know the entire flow — streaming, checkpointing, termination. The `process` function is just the concrete filling of that skeleton.
 
 The protocol is defined in [`examples/protocols/sendfile.zig`](./examples/protocols/sendfile.zig), with TCP setup and file I/O in [`examples/sendfile.zig`](./examples/sendfile.zig).
-
 
 ---
 
