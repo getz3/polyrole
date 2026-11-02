@@ -30,7 +30,7 @@ pub fn Data(Data_: type, State_: type) type {
 pub fn ProtocolInfo(
     comptime ProtocolName_: []const u8,
     comptime Role_: type,
-    comptime context_: anytype,
+    comptime Context_: anytype,
     comptime internal_roles_: []const Role_,
     comptime extern_state_: []const type,
 ) type {
@@ -38,8 +38,8 @@ pub fn ProtocolInfo(
         switch (@typeInfo(Role_)) {
             .@"enum" => |E| {
                 for (E.field_names) |name| {
-                    if (@hasField(@TypeOf(context_), name)) {} else {
-                        @compileError(std.fmt.comptimePrint("{any} does not contain field {s}", .{ context_, name }));
+                    if (@hasField(@TypeOf(Context_), name)) {} else {
+                        @compileError(std.fmt.comptimePrint("{any} does not contain field {s}", .{ Context_, name }));
                     }
                 }
             },
@@ -54,12 +54,12 @@ pub fn ProtocolInfo(
 
         pub const ProtocolName = ProtocolName_;
         pub const Role = Role_;
-        pub const context = context_;
+        pub const Context = Context_;
         pub const internal_roles: []const Role_ = internal_roles_;
         pub const extern_state: []const type = extern_state_;
 
         pub fn Ctx(_: @This(), r: Role_) type {
-            return @field(context_, @tagName(r));
+            return @field(Context_, @tagName(r));
         }
     };
 }
@@ -110,7 +110,7 @@ pub fn reachableStates(comptime State: type) struct { states: []const type, stat
         var state_machine_names: []const []const u8 = &.{@TypeOf(State.info).ProtocolName};
         var states_stack: []const type = &.{State};
         var states_set: TypeSet(128) = .init;
-        const ExpectedContext = @TypeOf(State.info).context;
+        const ExpectedContext = @TypeOf(State.info).Context;
 
         states_set.insert(State);
 
@@ -211,7 +211,7 @@ fn reachableStatesDepthFirstSearch(
                         // Validate that the handler context type matches (skip for special states like Exit)
                         if (NextState != Exit) {
                             const Info = @TypeOf(NextState.info);
-                            const NextContext = Info.context;
+                            const NextContext = Info.Context;
                             const Role = Info.Role;
                             const is_equal: bool = blk: {
                                 for (@typeInfo(Role).@"enum".field_names) |name| {
