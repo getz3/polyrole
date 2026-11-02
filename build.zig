@@ -19,7 +19,6 @@ pub fn build(b: *std.Build) void {
         .{ .name = "pingpong", .path = "examples/pingpong.zig", .graph = true },
         .{ .name = "sendfile", .path = "examples/sendfile.zig", .graph = true },
         .{ .name = "random-pingpong-2pc", .path = "examples/random_pingpong_2pc.zig", .graph = true },
-        .{ .name = "mux-demo", .path = "examples/mux_demo.zig", .graph = false },
     };
 
     const gen_graph = b.step("gen-graphs", "Generate SVG graph for the examples");
