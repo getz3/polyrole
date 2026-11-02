@@ -14,11 +14,11 @@ const BobContext = struct {
 };
 
 const Context = struct {
-    alice: type = AliceContext,
-    bob: type = BobContext,
+    alice: AliceContext,
+    bob: BobContext,
 };
 
-pub const EnterFsmState = pingpong.MkPingPong(Role, .alice, .bob, Context{}, .pingpong, .pingpong, polyrole.Exit).Ping;
+pub const EnterFsmState = pingpong.MkPingPong(Role, .alice, .bob, Context, .pingpong, .pingpong, polyrole.Exit).Ping;
 
 pub const Runner = polyrole.Runner(EnterFsmState);
 pub const curr_id = Runner.idFromState(EnterFsmState);

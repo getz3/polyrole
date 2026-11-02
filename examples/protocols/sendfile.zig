@@ -24,10 +24,10 @@ pub fn MkSendFile(
     comptime Role: type,
     comptime sender: Role,
     comptime receiver: Role,
-    comptime context: anytype,
+    comptime Context: type,
     comptime batch_size: usize,
-    comptime sender_ctx_field: std.meta.FieldEnum(@field(context, @tagName(sender))),
-    comptime recver_ctx_field: std.meta.FieldEnum(@field(context, @tagName(receiver))),
+    comptime sender_ctx_field: std.meta.FieldEnum(@FieldType(Context, @tagName(sender))),
+    comptime recver_ctx_field: std.meta.FieldEnum(@FieldType(Context, @tagName(receiver))),
     comptime Successed: type,
     comptime Failed: type,
 ) type {
@@ -37,12 +37,12 @@ pub fn MkSendFile(
 
             pub const info = sendfile_info("Start", sender, &.{receiver});
 
-            pub fn process(parent_ctx: *@field(context, @tagName(sender))) !@This() {
+            pub fn process(parent_ctx: *info.Ctx(sender)) !@This() {
                 const ctx = sender_ctxFromParent(parent_ctx);
                 return .{ .file_size = .{ .data = ctx.file_size } };
             }
 
-            pub fn preprocess_0(parent_ctx: *@field(context, @tagName(receiver)), msg: @This()) !void {
+            pub fn preprocess_0(parent_ctx: *info.Ctx(receiver), msg: @This()) !void {
                 const ctx = recver_ctxFromParent(parent_ctx);
                 switch (msg) {
                     .file_size => |val| {
@@ -61,7 +61,7 @@ pub fn MkSendFile(
 
             pub const info = sendfile_info("Send", sender, &.{receiver});
 
-            pub fn process(parent_ctx: *@field(context, @tagName(sender))) !@This() {
+            pub fn process(parent_ctx: *info.Ctx(sender)) !@This() {
                 const ctx = sender_ctxFromParent(parent_ctx);
                 if (ctx.send_size >= batch_size) {
                     ctx.send_size = 0;
@@ -83,7 +83,7 @@ pub fn MkSendFile(
                 }
             }
 
-            pub fn preprocess_0(parent_ctx: *@field(context, @tagName(receiver)), msg: @This()) !void {
+            pub fn preprocess_0(parent_ctx: *info.Ctx(receiver), msg: @This()) !void {
                 const ctx = recver_ctxFromParent(parent_ctx);
                 var size: usize = 0;
                 switch (msg) {
@@ -122,7 +122,7 @@ pub fn MkSendFile(
 
                 pub const info = sendfile_info("CheckHash", receiver, &.{sender});
 
-                pub fn process(parent_ctx: *@field(context, @tagName(receiver))) !@This() {
+                pub fn process(parent_ctx: *info.Ctx(receiver)) !@This() {
                     const ctx = recver_ctxFromParent(parent_ctx);
                     const curr_hash = ctx.hasher.final();
                     ctx.hasher = std.hash.XxHash3.init(0);
@@ -134,7 +134,7 @@ pub fn MkSendFile(
                         return .{ .failed = .{ .data = {} } };
                     }
                 }
-                pub fn preprocess_0(parent_ctx: *@field(context, @tagName(sender)), msg: @This()) !void {
+                pub fn preprocess_0(parent_ctx: *info.Ctx(sender), msg: @This()) !void {
                     const ctx = sender_ctxFromParent(parent_ctx);
                     _ = ctx;
                     switch (msg) {
@@ -152,18 +152,18 @@ pub fn MkSendFile(
         ) polyrole.ProtocolInfo(
             "sendfile",
             Role,
-            context,
+            Context,
             &.{ sender, receiver },
             &.{ Successed, Failed },
         ) {
             return .{ .name = StateName, .sender = sender_, .receiver = receiver_ };
         }
 
-        fn sender_ctxFromParent(parent_ctx: *@field(context, @tagName(sender))) *SendContext {
+        fn sender_ctxFromParent(parent_ctx: *@FieldType(Context, @tagName(sender))) *SendContext {
             return &@field(parent_ctx, @tagName(sender_ctx_field));
         }
 
-        fn recver_ctxFromParent(parent_ctx: *@field(context, @tagName(receiver))) *RecvContext {
+        fn recver_ctxFromParent(parent_ctx: *@FieldType(Context, @tagName(receiver))) *RecvContext {
             return &@field(parent_ctx, @tagName(recver_ctx_field));
         }
     };

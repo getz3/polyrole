@@ -30,7 +30,7 @@ pub fn Data(Data_: type, State_: type) type {
 pub fn ProtocolInfo(
     comptime ProtocolName_: []const u8,
     comptime Role_: type,
-    comptime Context_: anytype,
+    comptime Context_: type,
     comptime internal_roles_: []const Role_,
     comptime extern_state_: []const type,
 ) type {
@@ -38,7 +38,7 @@ pub fn ProtocolInfo(
         switch (@typeInfo(Role_)) {
             .@"enum" => |E| {
                 for (E.field_names) |name| {
-                    if (@hasField(@TypeOf(Context_), name)) {} else {
+                    if (@hasField(Context_, name)) {} else {
                         @compileError(std.fmt.comptimePrint("{any} does not contain field {s}", .{ Context_, name }));
                     }
                 }
@@ -59,7 +59,7 @@ pub fn ProtocolInfo(
         pub const extern_state: []const type = extern_state_;
 
         pub fn Ctx(_: @This(), r: Role_) type {
-            return @field(Context_, @tagName(r));
+            return @FieldType(Context_, @tagName(r));
         }
     };
 }
@@ -215,7 +215,7 @@ fn reachableStatesDepthFirstSearch(
                             const Role = Info.Role;
                             const is_equal: bool = blk: {
                                 for (@typeInfo(Role).@"enum".field_names) |name| {
-                                    if (@field(NextContext, name) != @field(ExpectedContext, name)) {
+                                    if (@FieldType(NextContext, name) != @FieldType(ExpectedContext, name)) {
                                         break :blk false;
                                     }
                                 }

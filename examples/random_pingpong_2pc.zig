@@ -98,10 +98,10 @@ const SelectorContext = struct {
 };
 
 const Context = struct {
-    alice: type = AliceContext,
-    bob: type = BobContext,
-    charlie: type = CharlieContext,
-    selector: type = SelectorContext,
+    alice: AliceContext,
+    bob: BobContext,
+    charlie: CharlieContext,
+    selector: SelectorContext,
 };
 
 pub const EnterFsmState = Start;
@@ -114,7 +114,7 @@ fn PingPong(client: AllRole, server: AllRole, Next: type) type {
         AllRole,
         client,
         server,
-        Context{},
+        Context,
         .pingpong_client,
         .pingpong_server,
         Next,
@@ -122,13 +122,13 @@ fn PingPong(client: AllRole, server: AllRole, Next: type) type {
 }
 
 fn CAB(Next: type) type {
-    return mk2pc(AllRole, .charlie, .alice, .bob, Context{}, Next, polyrole.Exit);
+    return mk2pc(AllRole, .charlie, .alice, .bob, Context, Next, polyrole.Exit);
 }
 fn ABC(Next: type) type {
-    return mk2pc(AllRole, .alice, .bob, .charlie, Context{}, Next, polyrole.Exit);
+    return mk2pc(AllRole, .alice, .bob, .charlie, Context, Next, polyrole.Exit);
 }
 fn BAC(Next: type) type {
-    return mk2pc(AllRole, .bob, .alice, .charlie, Context{}, Next, polyrole.Exit);
+    return mk2pc(AllRole, .bob, .alice, .charlie, Context, Next, polyrole.Exit);
 }
 
 pub const Start = union(enum) {
@@ -144,7 +144,7 @@ pub const Start = union(enum) {
     pub const info: polyrole.ProtocolInfo(
         "random_pingpong_and_2pc",
         AllRole,
-        Context{},
+        Context,
         &.{ .selector, .charlie, .alice, .bob },
         &.{},
     ) = .{

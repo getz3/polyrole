@@ -61,15 +61,15 @@ const Role = enum { a, b, c, d };
 const MvarChannelMap = channel.MvarChannelMap(Role);
 
 const Context = struct {
-    a: type = i32,
-    b: type = i32,
-    c: type = i32,
-    d: type = i32,
+    a: i32,
+    b: i32,
+    c: i32,
+    d: i32,
 };
 
 fn mk_info(
     StateName: []const u8,
-) polyrole.ProtocolInfo("counter", Role, Context{}, &.{.a}, &.{}) {
+) polyrole.ProtocolInfo("counter", Role, Context, &.{.a}, &.{}) {
     //`internal_roles` is 1, which is equivalent to `polystate`.
     return .{ .name = StateName, .sender = .a, .receiver = &.{} };
 }

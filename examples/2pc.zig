@@ -19,12 +19,12 @@ const CharlieContext = struct {
 };
 
 const Context = struct {
-    alice: type = AliceContext,
-    bob: type = BobContext,
-    charlie: type = CharlieContext,
+    alice: AliceContext,
+    bob: BobContext,
+    charlie: CharlieContext,
 };
 
-pub const EnterFsmState = mk2pc(Role, .charlie, .alice, .bob, Context{}, polyrole.Exit, polyrole.Exit).Begin;
+pub const EnterFsmState = mk2pc(Role, .charlie, .alice, .bob, Context, polyrole.Exit, polyrole.Exit).Begin;
 
 pub const Runner = polyrole.Runner(EnterFsmState);
 pub const curr_id = Runner.idFromState(EnterFsmState);

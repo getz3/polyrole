@@ -7,7 +7,7 @@ pub fn mk2pc(
     coordinator: Role,
     alice: Role,
     bob: Role,
-    context: anytype,
+    Context: type,
     Successed: type,
     Failed: type,
 ) type {
@@ -19,7 +19,7 @@ pub fn mk2pc(
         ) polyrole.ProtocolInfo(
             "2pc_generic",
             Role,
-            context,
+            Context,
             &.{ coordinator, alice, bob },
             &.{ Successed, Failed },
         ) {

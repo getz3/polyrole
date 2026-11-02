@@ -14,9 +14,9 @@ pub fn MkPingPong(
     comptime Role: type,
     comptime client: Role,
     comptime server: Role,
-    comptime context: anytype,
-    comptime client_ctx_field: std.meta.FieldEnum(@field(context, @tagName(client))),
-    comptime server_ctx_field: std.meta.FieldEnum(@field(context, @tagName(server))),
+    comptime Context: type,
+    comptime client_ctx_field: std.meta.FieldEnum(@FieldType(Context, @tagName(client))),
+    comptime server_ctx_field: std.meta.FieldEnum(@FieldType(Context, @tagName(server))),
     comptime NextFsmState: type,
 ) type {
     return struct {
@@ -24,7 +24,7 @@ pub fn MkPingPong(
             StateName: []const u8,
             sender: Role,
             receiver: []const Role,
-        ) polyrole.ProtocolInfo("pingpong", Role, context, &.{ client, server }, &.{NextFsmState}) {
+        ) polyrole.ProtocolInfo("pingpong", Role, Context, &.{ client, server }, &.{NextFsmState}) {
             return .{ .name = StateName, .sender = sender, .receiver = receiver };
         }
 
@@ -73,11 +73,11 @@ pub fn MkPingPong(
             }
         };
 
-        fn client_ctxFromParent(parent_ctx: *@field(context, @tagName(client))) *ClientContext {
+        fn client_ctxFromParent(parent_ctx: *@FieldType(Context, @tagName(client))) *ClientContext {
             return &@field(parent_ctx, @tagName(client_ctx_field));
         }
 
-        fn server_ctxFromParent(parent_ctx: *@field(context, @tagName(server))) *ServerContext {
+        fn server_ctxFromParent(parent_ctx: *@FieldType(Context, @tagName(server))) *ServerContext {
             return &@field(parent_ctx, @tagName(server_ctx_field));
         }
     };

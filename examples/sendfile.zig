@@ -17,12 +17,12 @@ pub const BobContext = struct {
 pub const Role = enum { alice, bob };
 
 pub const Context = struct {
-    alice: type = AliceContext,
-    bob: type = BobContext,
+    alice: AliceContext,
+    bob: BobContext,
 };
 
 fn SendFile(Successed: type, Failed: type) type {
-    return sendfile.MkSendFile(Role, .alice, .bob, Context{}, 20 * 1024 * 1024, .send_context, .recv_context, Successed, Failed);
+    return sendfile.MkSendFile(Role, .alice, .bob, Context, 20 * 1024 * 1024, .send_context, .recv_context, Successed, Failed);
 }
 
 pub const EnterFsmState = SendFile(polyrole.Exit, polyrole.Exit).Start;
