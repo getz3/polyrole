@@ -104,6 +104,7 @@ pub fn main(init: std.process.Init) !void {
 
             try Runner.symmetric_run(
                 .bob,
+                &client_context,
                 channelMap(.{
                     .alice = StreamChannel{
                         .reader = &stream_reader.interface,
@@ -112,7 +113,6 @@ pub fn main(init: std.process.Init) !void {
                     },
                 }),
                 curr_id,
-                &client_context,
             );
         }
     };
@@ -147,6 +147,7 @@ pub fn main(init: std.process.Init) !void {
 
     var stid = try std.Thread.spawn(.{}, Runner.symmetric_run, .{
         .alice,
+        &server_context,
         channelMap(.{
             .bob = StreamChannel{
                 .reader = &stream_reader.interface,
@@ -155,7 +156,6 @@ pub fn main(init: std.process.Init) !void {
             },
         }),
         curr_id,
-        &server_context,
     });
 
     defer stid.join();

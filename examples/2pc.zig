@@ -47,7 +47,7 @@ pub fn main(init: std.process.Init) !void {
             var alice_context: AliceContext = undefined;
             io_.random(@ptrCast(&alice_context.xoshiro256.s));
 
-            try Runner.symmetric_run(.alice, mcm, curr_id, &alice_context);
+            try Runner.symmetric_run(.alice, &alice_context, mcm, curr_id);
         }
     };
 
@@ -56,14 +56,14 @@ pub fn main(init: std.process.Init) !void {
             var bob_context: BobContext = undefined;
             io_.random(@ptrCast(&bob_context.xoshiro256.s));
 
-            try Runner.symmetric_run(.bob, mcm, curr_id, &bob_context);
+            try Runner.symmetric_run(.bob, &bob_context, mcm, curr_id);
         }
     };
 
     const charlie = struct {
         fn run(mcm: *MvarChannelMap) !void {
             var charlie_context: CharlieContext = .{};
-            try Runner.symmetric_run(.charlie, mcm, curr_id, &charlie_context);
+            try Runner.symmetric_run(.charlie, &charlie_context, mcm, curr_id);
         }
     };
 

@@ -71,9 +71,9 @@ pub fn Runner(
 
         pub fn symmetric_run(
             comptime curr_role: Role,
+            ctx: *State_.info.Ctx(curr_role),
             channels: anytype,
             curr_id: StateId,
-            ctx: *State_.info.Ctx(curr_role),
         ) !void {
             @setEvalBranchQuota(10_000_000);
             sw: switch (curr_id) {
