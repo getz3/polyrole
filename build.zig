@@ -23,6 +23,8 @@ pub fn build(b: *std.Build) void {
 
     const gen_graph = b.step("gen-graphs", "Generate SVG graph for the examples");
 
+    const run_all = b.step("run_all", "Run all examples");
+
     inline for (exe_infos) |info| {
         const exe = b.addExecutable(.{
             .name = info.name,
@@ -38,6 +40,7 @@ pub fn build(b: *std.Build) void {
 
         const run_cmd = b.addRunArtifact(exe);
         run_step.dependOn(&run_cmd.step);
+        run_all.dependOn(&run_cmd.step);
 
         if (info.graph) {
             addGraphToStep(
