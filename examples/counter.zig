@@ -19,25 +19,25 @@ pub fn main(init: std.process.Init) !void {
     const a = struct {
         fn run(mcm: *MvarChannelMap) !void {
             var ctx: i32 = 0;
-            try Runner.symmetric_run(.a, null, false, mcm, curr_id, &ctx);
+            try Runner.symmetric_run(.a, false, mcm, curr_id, &ctx);
         }
     };
     const b = struct {
         fn run(mcm: *MvarChannelMap) !void {
             var ctx: i32 = 0;
-            try Runner.symmetric_run(.b, null, false, mcm, curr_id, &ctx);
+            try Runner.symmetric_run(.b, false, mcm, curr_id, &ctx);
         }
     };
     const c = struct {
         fn run(mcm: *MvarChannelMap) !void {
             var ctx: i32 = 0;
-            try Runner.symmetric_run(.c, null, false, mcm, curr_id, &ctx);
+            try Runner.symmetric_run(.c, false, mcm, curr_id, &ctx);
         }
     };
     const d = struct {
         fn run(mcm: *MvarChannelMap) !void {
             var ctx: i32 = 0;
-            try Runner.symmetric_run(.d, null, false, mcm, curr_id, &ctx);
+            try Runner.symmetric_run(.d, false, mcm, curr_id, &ctx);
         }
     };
 

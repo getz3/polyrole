@@ -83,7 +83,6 @@ pub fn main(init: std.process.Init) !void {
 
             try Runner.symmetric_run(
                 .bob,
-                null,
                 true,
                 .{
                     .alice = StreamChannel{
@@ -128,7 +127,6 @@ pub fn main(init: std.process.Init) !void {
 
     var stid = try std.Thread.spawn(.{}, Runner.symmetric_run, .{
         .alice,
-        null,
         true,
         .{
             .bob = StreamChannel{
