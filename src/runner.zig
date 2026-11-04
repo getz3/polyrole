@@ -71,7 +71,7 @@ pub fn Runner(
 
         pub fn symmetric_run(
             comptime curr_role: Role,
-            mult_channel: anytype,
+            channels: anytype,
             curr_id: StateId,
             ctx: *State_.info.Ctx(curr_role),
         ) !void {
@@ -92,7 +92,7 @@ pub fn Runner(
                         //The person who notifies it is determined to be `internal_role[0]`.
                         //The determinism here is very important.
                         //It ensures that the sender and receiver of the notification can be determined by the state machine.
-                        const notify: Notify = try mult_channel.recv(curr_role, internal_roles[0], state_id, Notify);
+                        const notify: Notify = try channels.recv(curr_role, internal_roles[0], state_id, Notify);
 
                         const next_state_id: StateId = @fromBackingInt(@intCast(notify.polyrole_notify));
                         continue :sw next_state_id;
@@ -100,7 +100,7 @@ pub fn Runner(
                         //The current role is the sender, which sends messages to all receivers.
                         const result = try State.process(ctx);
                         inline for (receiver) |rvr| {
-                            try mult_channel.send(curr_role, rvr, state_id, result);
+                            try channels.send(curr_role, rvr, state_id, result);
                         }
                         switch (result) {
                             inline else => |new_fsm_state_wit| {
@@ -111,7 +111,7 @@ pub fn Runner(
                                     NewState,
                                     internal_roles,
                                     extern_state,
-                                    mult_channel,
+                                    channels,
                                 );
                                 continue :sw comptime idFromState(NewState);
                             },
@@ -119,7 +119,7 @@ pub fn Runner(
                     } else {
                         if (comptime std.mem.indexOfScalar(Role, receiver, curr_role)) |idx| {
                             //curr_role is the receiver
-                            const result = try mult_channel.recv(curr_role, sender, state_id, State);
+                            const result = try channels.recv(curr_role, sender, state_id, State);
 
                             //If the receiver needs to notify an external actor,
                             // it should do so as soon as possible,
@@ -133,7 +133,7 @@ pub fn Runner(
                                         NewState,
                                         internal_roles,
                                         extern_state,
-                                        mult_channel,
+                                        channels,
                                     );
                                 },
                             }
@@ -164,7 +164,7 @@ pub fn Runner(
                                         NewState,
                                         internal_roles,
                                         extern_state,
-                                        mult_channel,
+                                        channels,
                                     );
                                     continue :sw comptime idFromState(NewState);
                                 },
@@ -182,7 +182,7 @@ pub fn Runner(
             comptime NewState: type,
             comptime internal_roles: []const Role,
             comptime extern_state: []const type,
-            mult_channel: anytype,
+            channels: anytype,
         ) !void {
             //Checks if the new state is an external state (or `Exit`, since the end of a protocol
             //must be synchronized too) and the current role is `internal_roles[0]`.
@@ -194,7 +194,7 @@ pub fn Runner(
                 inline for (0..@typeInfo(Role).@"enum".field_names.len) |i| {
                     const role: Role = @fromBackingInt(@intCast(i));
                     if (comptime std.mem.indexOfScalar(Role, internal_roles, role) == null) {
-                        try mult_channel.send(curr_role, role, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
+                        try channels.send(curr_role, role, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
                     }
                 }
             }
