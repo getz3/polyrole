@@ -16,6 +16,27 @@ pub const BobContext = struct {
 
 pub const Role = enum { alice, bob };
 
+///Adapts a role-indexed struct of `StreamChannel`s to the dynamic
+///`send(from, to, ...)` / `recv(curr, from, ...)` interface `Runner` expects:
+///the struct holds one channel per remote role, and `tagName` picks the right one.
+fn DynamicChannel(comptime Map: type) type {
+    return struct {
+        map: Map,
+
+        pub fn send(self: @This(), _: Role, comptime to: Role, state_id: anytype, val: anytype) !void {
+            try @field(self.map, @tagName(to)).send(state_id, val);
+        }
+
+        pub fn recv(self: @This(), _: Role, comptime from: Role, state_id: anytype, T: type) !T {
+            return @field(self.map, @tagName(from)).recv(state_id, T);
+        }
+    };
+}
+
+fn channelMap(map: anytype) DynamicChannel(@TypeOf(map)) {
+    return .{ .map = map };
+}
+
 pub const Context = struct {
     alice: AliceContext,
     bob: BobContext,
@@ -83,14 +104,13 @@ pub fn main(init: std.process.Init) !void {
 
             try Runner.symmetric_run(
                 .bob,
-                true,
-                .{
+                channelMap(.{
                     .alice = StreamChannel{
                         .reader = &stream_reader.interface,
                         .writer = &stream_writer.interface,
                         .log = false,
                     },
-                },
+                }),
                 curr_id,
                 &client_context,
             );
@@ -127,14 +147,13 @@ pub fn main(init: std.process.Init) !void {
 
     var stid = try std.Thread.spawn(.{}, Runner.symmetric_run, .{
         .alice,
-        true,
-        .{
+        channelMap(.{
             .bob = StreamChannel{
                 .reader = &stream_reader.interface,
                 .writer = &stream_writer.interface,
                 .log = false,
             },
-        },
+        }),
         curr_id,
         &server_context,
     });

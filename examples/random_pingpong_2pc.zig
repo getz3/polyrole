@@ -23,7 +23,7 @@ pub fn main(init: std.process.Init) !void {
         fn run(io_: Io, mcm: *MvarChannelMap) !void {
             var alice_context: AliceContext = .{};
             io_.random(@ptrCast(&alice_context.xoshiro256.s));
-            try Runner.symmetric_run(.alice, false, mcm, curr_id, &alice_context);
+            try Runner.symmetric_run(.alice, mcm, curr_id, &alice_context);
         }
     };
 
@@ -32,7 +32,7 @@ pub fn main(init: std.process.Init) !void {
             var bob_context: BobContext = .{};
             io_.random(@ptrCast(&bob_context.xoshiro256.s));
 
-            try Runner.symmetric_run(.bob, false, mcm, curr_id, &bob_context);
+            try Runner.symmetric_run(.bob, mcm, curr_id, &bob_context);
         }
     };
 
@@ -41,7 +41,7 @@ pub fn main(init: std.process.Init) !void {
             var charlie_context: CharlieContext = .{};
             io_.random(@ptrCast(&charlie_context.xoshiro256.s));
 
-            try Runner.symmetric_run(.charlie, false, mcm, curr_id, &charlie_context);
+            try Runner.symmetric_run(.charlie, mcm, curr_id, &charlie_context);
         }
     };
 
@@ -50,7 +50,7 @@ pub fn main(init: std.process.Init) !void {
             var select_context: SelectorContext = .{};
             io_.random(@ptrCast(&select_context.xoshiro256.s));
 
-            try Runner.symmetric_run(.selector, false, mcm, curr_id, &select_context);
+            try Runner.symmetric_run(.selector, mcm, curr_id, &select_context);
         }
     };
 
