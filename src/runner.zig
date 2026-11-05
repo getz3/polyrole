@@ -102,17 +102,19 @@ pub fn Runner(
                         inline for (receiver) |rvr| {
                             try channels.send(curr_role, rvr, state_id, result);
                         }
+
                         switch (result) {
                             inline else => |new_fsm_state_wit| {
                                 const NewState = @TypeOf(new_fsm_state_wit).State;
-                                try check_then_notify_extern_roles(
+                                const roles = comptime extern_targets(
                                     curr_role,
-                                    state_id,
                                     NewState,
                                     internal_roles,
                                     extern_state,
-                                    channels,
                                 );
+                                for (roles) |ro| {
+                                    try channels.send(curr_role, ro, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
+                                }
                                 continue :sw comptime idFromState(NewState);
                             },
                         }
@@ -131,14 +133,15 @@ pub fn Runner(
                             switch (result) {
                                 inline else => |new_fsm_state_wit| {
                                     const NewState = @TypeOf(new_fsm_state_wit).State;
-                                    try check_then_notify_extern_roles(
+                                    const roles = comptime extern_targets(
                                         curr_role,
-                                        state_id,
                                         NewState,
                                         internal_roles,
                                         extern_state,
-                                        channels,
                                     );
+                                    for (roles) |ro| {
+                                        try channels.send(curr_role, ro, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
+                                    }
                                     continue :sw comptime idFromState(NewState);
                                 },
                             }
@@ -149,14 +152,15 @@ pub fn Runner(
                                     // However, it still needs to check whether to notify external roles.
                                     comptime std.debug.assert(U.field_names.len == 1);
                                     const NewState = U.field_types[0].State;
-                                    try check_then_notify_extern_roles(
+                                    const roles = comptime extern_targets(
                                         curr_role,
-                                        state_id,
                                         NewState,
                                         internal_roles,
                                         extern_state,
-                                        channels,
                                     );
+                                    for (roles) |ro| {
+                                        try channels.send(curr_role, ro, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
+                                    }
                                     continue :sw comptime idFromState(NewState);
                                 },
                                 else => unreachable,
@@ -167,14 +171,12 @@ pub fn Runner(
             }
         }
 
-        fn check_then_notify_extern_roles(
+        fn extern_targets(
             comptime curr_role: Role,
-            comptime state_id: StateId,
             comptime NewState: type,
             comptime internal_roles: []const Role,
             comptime extern_state: []const type,
-            channels: anytype,
-        ) !void {
+        ) []const Role {
             //Checks if the new state is an external state (or `Exit`, since the end of a protocol
             //must be synchronized too) and the current role is `internal_roles[0]`.
             if ((comptime std.mem.indexOfScalar(type, extern_state, NewState) != null or NewState == Exit) and
@@ -182,13 +184,16 @@ pub fn Runner(
             {
                 //It turns out that all roles that do not belong to internal_roles must be notified.
                 //This is equivalent to synchronizing the status once each protocol ends.
+                var targets: []const Role = &.{};
                 inline for (0..@typeInfo(Role).@"enum".field_names.len) |i| {
                     const role: Role = @fromBackingInt(@intCast(i));
                     if (comptime std.mem.indexOfScalar(Role, internal_roles, role) == null) {
-                        try channels.send(curr_role, role, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
+                        targets = targets ++ &[_]Role{role};
                     }
                 }
+                return targets;
             }
+            return &.{};
         }
     };
 }
