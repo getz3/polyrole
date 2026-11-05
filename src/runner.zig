@@ -121,9 +121,13 @@ pub fn Runner(
                             //curr_role is the receiver
                             const result = try channels.recv(curr_role, sender, state_id, State);
 
-                            //If the receiver needs to notify an external actor,
-                            // it should do so as soon as possible,
-                            // so that the external actor is notified before it executes its own handler function.
+                            //The receiver's handler function is called based on the receiver's position in `receiver`.
+                            // This is a convention that needs to be met when writing code and provides type safety.
+                            const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{idx});
+                            if (@hasDecl(State, fn_name)) {
+                                try @field(State, fn_name)(ctx, result);
+                            }
+
                             switch (result) {
                                 inline else => |new_fsm_state_wit| {
                                     const NewState = @TypeOf(new_fsm_state_wit).State;
@@ -135,19 +139,6 @@ pub fn Runner(
                                         extern_state,
                                         channels,
                                     );
-                                },
-                            }
-
-                            //The receiver's handler function is called based on the receiver's position in `receiver`.
-                            // This is a convention that needs to be met when writing code and provides type safety.
-                            const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{idx});
-                            if (@hasDecl(State, fn_name)) {
-                                try @field(State, fn_name)(ctx, result);
-                            }
-
-                            switch (result) {
-                                inline else => |new_fsm_state_wit| {
-                                    const NewState = @TypeOf(new_fsm_state_wit).State;
                                     continue :sw comptime idFromState(NewState);
                                 },
                             }
