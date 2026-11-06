@@ -4,6 +4,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
+
     const mod = b.addModule("root", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
@@ -19,6 +21,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "pingpong", .path = "examples/pingpong.zig", .graph = true },
         .{ .name = "sendfile", .path = "examples/sendfile.zig", .graph = true },
         .{ .name = "random-pingpong-2pc", .path = "examples/random_pingpong_2pc.zig", .graph = true },
+        .{ .name = "event", .path = "examples/event.zig", .graph = false },
     };
 
     const gen_graph = b.step("gen-graphs", "Generate SVG graph for the examples");
@@ -32,7 +35,10 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path(info.path),
                 .target = target,
                 .optimize = optimize,
-                .imports = &.{.{ .name = "polyrole", .module = mod }},
+                .imports = &.{
+                    .{ .name = "polyrole", .module = mod },
+                    .{ .name = "xev", .module = xev.module("xev") },
+                },
             }),
         });
 
