@@ -4,6 +4,7 @@ const root = @import("root.zig");
 const StateMap = root.StateMap;
 const Exit = root.Exit;
 const Notify = root.Notify;
+const Data = root.Data;
 
 pub fn Runner(
     comptime State_: type,
@@ -69,30 +70,53 @@ pub fn Runner(
             }
         }
 
+        pub fn ccc(comptime roles: []const Role) []const u32 {
+            var tmp: []const u32 = &.{};
+            inline for (roles) |r| {
+                tmp = tmp ++ &[_]u32{@as(u32, @intCast(@backingInt(r)))};
+            }
+            return tmp;
+        }
+
         pub const Return = struct {
-            state_id: u32,
-            point: ReturnPoint,
-        };
-        pub const ReturnPoint = union(enum) {
-            enter: void,
-            p0_recv_notify: struct { from: u32 },
-            p1_send_result: struct {
-                result: []const u8,
-                receiver_roles: []const u32,
-                new_state_id: u32,
-                notify_roles: []const u32,
+            curr_id: u32,
+            point: union(enum) {
+                done: void,
+                recv_notify: u32, //from some role
+                send_result: struct {
+                    result: []const u8,
+                    receiver_roles: []const u32,
+                    new_state_id: u32,
+                    notify_roles: []const u32,
+                },
+                recv_result: struct {
+                    from: u32, //from some role
+                    idx: u8, //idx
+                },
+                send_notify: struct {
+                    new_state_id: u32,
+                    notify_roles: []const u32,
+                },
             },
+
+            pub fn format(self: @This(), w: *std.Io.Writer) !void {
+                try w.print("\ncurr_id: {d}\n", .{self.curr_id});
+                try w.print("\npoint\n: {any}\n", .{self.point});
+            }
         };
         pub const EnterPoint = union(enum) {
-            enter: void,
-            p0_recv_notify: []const u8,
+            start: void,
+            continue_recv: struct {
+                result_str: []const u8,
+                idx: u8,
+            },
         };
 
         pub fn MakeRunner(
             comptime curr_role: Role,
-            comptime Ctx: State_.info.Ctx(curr_role),
             comptime Codec: type,
         ) type {
+            const Ctx = State_.info.Ctx(curr_role);
             return struct {
                 pub fn symmetric_run(
                     ctx_: *anyopaque,
@@ -102,11 +126,14 @@ pub fn Runner(
                 ) !Return {
                     @setEvalBranchQuota(10_000_000);
                     const curr_id: StateId = @fromBackingInt(@intCast(curr_id_));
-                    const ctx: *Ctx = @ptrCast(ctx_);
+                    const ctx: *Ctx = @ptrCast(@alignCast(ctx_));
                     switch (curr_id) {
                         inline else => |state_id| {
                             const State = StateFromId(state_id);
-                            if (comptime State == Exit) return;
+                            if (comptime State == Exit) return .{
+                                .curr_id = curr_id_,
+                                .point = .done,
+                            };
 
                             const info = comptime State.info;
                             const sender: Role = comptime info.sender;
@@ -114,16 +141,42 @@ pub fn Runner(
                             const internal_roles = comptime @TypeOf(info).internal_roles;
                             const extern_state = comptime @TypeOf(info).extern_state;
 
-                            switch (enter_point) {
-                                .p0_recv_notify => |str| {
-                                    var reader = std.Io.Reader.fixed(str);
-                                    const notify: Notify = Codec.decode(&reader, state_id, Notify);
-                                    return .{
-                                        .state_id = notify.polyrole_notify,
-                                        .point = .enter,
-                                    };
+                            switch (enter_point.*) {
+                                .continue_recv => |continue_value| {
+                                    var reader = std.Io.Reader.fixed(continue_value.result_str);
+
+                                    const result = try Codec.decode(&reader, state_id, State);
+
+                                    switch (continue_value.idx) {
+                                        inline else => |idx| {
+                                            //The receiver's handler function is called based on the receiver's position in `receiver`.
+                                            // This is a convention that needs to be met when writing code and provides type safety.
+                                            const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{idx});
+                                            if (@hasDecl(State, fn_name)) {
+                                                try @field(State, fn_name)(ctx, result);
+                                            }
+                                            switch (result) {
+                                                inline else => |new_fsm_state_wit| {
+                                                    const NewState = @TypeOf(new_fsm_state_wit).State;
+                                                    const roles = comptime extern_targets(
+                                                        curr_role,
+                                                        NewState,
+                                                        internal_roles,
+                                                        extern_state,
+                                                    );
+                                                    const nid: u32 = @backingInt(idFromState(NewState));
+                                                    return .{ .curr_id = curr_id_, .point = .{
+                                                        .send_notify = .{
+                                                            .new_state_id = nid,
+                                                            .notify_roles = comptime ccc(roles),
+                                                        },
+                                                    } };
+                                                },
+                                            }
+                                        },
+                                    }
                                 },
-                                .enter => {
+                                .start => {
                                     if (comptime std.mem.indexOfScalar(Role, internal_roles, curr_role) == null) {
                                         //curr_role does not participate in the current protocol, so it waits for notification directly.
                                         //The person who notifies it is determined to be `internal_role[0]`.
@@ -132,10 +185,8 @@ pub fn Runner(
 
                                         //P0
                                         return .{
-                                            .state_id = curr_id_,
-                                            .point = .{
-                                                .p0_recv_notify = @intCast(@backingInt(internal_roles[0])),
-                                            },
+                                            .curr_id = curr_id_,
+                                            .point = .{ .recv_notify = @intCast(@backingInt(internal_roles[0])) },
                                         };
                                     } else if (comptime curr_role == sender) {
                                         //The current role is the sender, which sends messages to all receivers.
@@ -154,12 +205,12 @@ pub fn Runner(
                                                 );
                                                 const nid: u32 = @backingInt(idFromState(NewState));
 
-                                                return .{ .state_id = nid, .point = .{
-                                                    .p1_send_result = .{
+                                                return .{ .curr_id = curr_id_, .point = .{
+                                                    .send_result = .{
                                                         .result = writer.buffered(),
-                                                        .receiver_roles = receiver,
+                                                        .receiver_roles = comptime ccc(receiver),
                                                         .new_state_id = nid,
-                                                        .notify_roles = roles,
+                                                        .notify_roles = comptime ccc(roles),
                                                     },
                                                 } };
                                             },
@@ -167,30 +218,15 @@ pub fn Runner(
                                     } else {
                                         if (comptime std.mem.indexOfScalar(Role, receiver, curr_role)) |idx| {
                                             //curr_role is the receiver
-                                            const result = try channels.recv(curr_role, sender, state_id, State);
-
-                                            //The receiver's handler function is called based on the receiver's position in `receiver`.
-                                            // This is a convention that needs to be met when writing code and provides type safety.
-                                            const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{idx});
-                                            if (@hasDecl(State, fn_name)) {
-                                                try @field(State, fn_name)(ctx, result);
-                                            }
-
-                                            switch (result) {
-                                                inline else => |new_fsm_state_wit| {
-                                                    const NewState = @TypeOf(new_fsm_state_wit).State;
-                                                    const roles = comptime extern_targets(
-                                                        curr_role,
-                                                        NewState,
-                                                        internal_roles,
-                                                        extern_state,
-                                                    );
-                                                    for (roles) |ro| {
-                                                        try channels.send(curr_role, ro, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
-                                                    }
-                                                    continue :sw comptime idFromState(NewState);
+                                            return .{
+                                                .curr_id = curr_id_,
+                                                .point = .{
+                                                    .recv_result = .{
+                                                        .from = @intCast(@backingInt(sender)),
+                                                        .idx = @intCast(idx),
+                                                    },
                                                 },
-                                            }
+                                            };
                                         } else {
                                             switch (@typeInfo(State)) {
                                                 .@"union" => |U| {
@@ -204,10 +240,15 @@ pub fn Runner(
                                                         internal_roles,
                                                         extern_state,
                                                     );
-                                                    for (roles) |ro| {
-                                                        try channels.send(curr_role, ro, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
-                                                    }
-                                                    continue :sw comptime idFromState(NewState);
+
+                                                    const nid: u32 = @backingInt(idFromState(NewState));
+
+                                                    return .{ .curr_id = curr_id_, .point = .{
+                                                        .send_result = .{
+                                                            .new_state_id = nid,
+                                                            .notify_roles = roles,
+                                                        },
+                                                    } };
                                                 },
                                                 else => unreachable,
                                             }
@@ -348,4 +389,90 @@ pub fn Runner(
             return &.{};
         }
     };
+}
+
+const PingPong = enum { a, b };
+const PingPongContext = struct { a: u32, b: void };
+
+fn pingpogn_info(
+    StateName: []const u8,
+    sender: PingPong,
+    receiver: []const PingPong,
+) root.ProtocolInfo(
+    "pingpong",
+    PingPong,
+    PingPongContext,
+    &.{ .a, .b },
+    &.{root.Exit},
+) {
+    return .{
+        .name = StateName,
+        .sender = sender,
+        .receiver = receiver,
+    };
+}
+
+const Ping = union(enum) {
+    ping: Data(void, Pong),
+    next: Data(void, root.Exit),
+
+    pub const info = pingpogn_info("Ping", .a, &.{.b});
+
+    pub fn process(ctx: *info.Ctx(.a)) !@This() {
+        std.debug.print("val: {d}\n", .{ctx.*});
+        if (ctx.* >= 0) {
+            return .{ .next = .{ .data = {} } };
+        }
+        ctx.* += 1;
+        return .{ .ping = .{ .data = {} } };
+    }
+};
+const Pong = union(enum) {
+    pong: Data(void, Ping),
+
+    pub const info = pingpogn_info("Ping", .b, &.{.a});
+
+    pub fn process(_: *info.Ctx(.b)) !@This() {
+        return .pong;
+    }
+};
+
+test "MakeRunner" {
+    var ctx: PingPongContext = .{ .a = 0, .b = {} };
+
+    const PingPongRunner = Runner(Ping);
+
+    try PingPongRunner.simulate(PingPongContext, &ctx, PingPongRunner.idFromState(Ping));
+
+    const Codec = @import("Codec.zig");
+
+    const ASuspendRunner = PingPongRunner.MakeRunner(.a, Codec);
+    const BSuspendRunner = PingPongRunner.MakeRunner(.b, Codec);
+    var buff: [100]u8 = undefined;
+    var ep: PingPongRunner.EnterPoint = .start;
+    const result = try ASuspendRunner.symmetric_run(
+        &ctx.a,
+        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
+        &buff,
+        &ep,
+    );
+
+    const result1 = try BSuspendRunner.symmetric_run(
+        &ctx.b,
+        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
+        &buff,
+        &ep,
+    );
+
+    ep = .{ .continue_recv = .{ .idx = 0, .result_str = result.point.send_result.result } };
+    const result2 = try BSuspendRunner.symmetric_run(
+        &ctx.b,
+        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
+        &buff,
+        &ep,
+    );
+
+    std.debug.print("a, result: {f}\n", .{result});
+    std.debug.print("b, result: {f}\n", .{result1});
+    std.debug.print("b, result: {f}\n", .{result2});
 }
