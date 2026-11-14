@@ -82,17 +82,15 @@ pub fn Runner(
             curr_id: u32,
             point: union(enum) {
                 done: void,
-                recv_notify: u32, //from some role
+                recv_notify_from_role: u32, //from some role
                 send_result: struct {
                     result: []const u8,
                     receiver_roles: []const u32,
                     new_state_id: u32,
                     notify_roles: []const u32,
                 },
-                recv_result: struct {
-                    from: u32, //from some role
-                    idx: u8, //idx
-                },
+                recv_result_from_role: u32, //from some role
+
                 send_notify: struct {
                     new_state_id: u32,
                     notify_roles: []const u32,
@@ -108,7 +106,6 @@ pub fn Runner(
             start: void,
             continue_recv: struct {
                 result_str: []const u8,
-                idx: u4,
             },
         };
 
@@ -144,56 +141,41 @@ pub fn Runner(
                             switch (enter_point) {
                                 .continue_recv => |continue_value| {
                                     var reader = std.Io.Reader.fixed(continue_value.result_str);
-
                                     const result = try Codec.decode(&reader, state_id, State);
-
-                                    switch (continue_value.idx) {
-                                        inline else => |idx| {
-                                            //The receiver's handler function is called based on the receiver's position in `receiver`.
-                                            // This is a convention that needs to be met when writing code and provides type safety.
-                                            const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{idx});
-                                            if (@hasDecl(State, fn_name)) {
-                                                try @field(State, fn_name)(ctx, result);
-                                            }
-                                            switch (result) {
-                                                inline else => |new_fsm_state_wit| {
-                                                    const NewState = @TypeOf(new_fsm_state_wit).State;
-                                                    const roles = comptime extern_targets(
-                                                        curr_role,
-                                                        NewState,
-                                                        internal_roles,
-                                                        extern_state,
-                                                    );
-                                                    const nid: u32 = @backingInt(idFromState(NewState));
-                                                    return .{ .curr_id = curr_id_, .point = .{
-                                                        .send_notify = .{
-                                                            .new_state_id = nid,
-                                                            .notify_roles = comptime ccc(roles),
-                                                        },
-                                                    } };
+                                    const idx = comptime std.mem.indexOfScalar(Role, receiver, curr_role) orelse 10000;
+                                    const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{idx});
+                                    if (@hasDecl(State, fn_name)) {
+                                        try @field(State, fn_name)(ctx, result);
+                                    }
+                                    switch (result) {
+                                        inline else => |new_fsm_state_wit| {
+                                            const NewState = @TypeOf(new_fsm_state_wit).State;
+                                            const roles = comptime extern_targets(
+                                                curr_role,
+                                                NewState,
+                                                internal_roles,
+                                                extern_state,
+                                            );
+                                            const nid: u32 = @backingInt(idFromState(NewState));
+                                            return .{ .curr_id = curr_id_, .point = .{
+                                                .send_notify = .{
+                                                    .new_state_id = nid,
+                                                    .notify_roles = comptime ccc(roles),
                                                 },
-                                            }
+                                            } };
                                         },
                                     }
                                 },
                                 .start => {
                                     if (comptime std.mem.indexOfScalar(Role, internal_roles, curr_role) == null) {
-                                        //curr_role does not participate in the current protocol, so it waits for notification directly.
-                                        //The person who notifies it is determined to be `internal_role[0]`.
-                                        //The determinism here is very important.
-                                        //It ensures that the sender and receiver of the notification can be determined by the state machine.
-
-                                        //P0
                                         return .{
                                             .curr_id = curr_id_,
-                                            .point = .{ .recv_notify = @backingInt(internal_roles[0]) },
+                                            .point = .{ .recv_notify_from_role = @backingInt(internal_roles[0]) },
                                         };
                                     } else if (comptime curr_role == sender) {
-                                        //The current role is the sender, which sends messages to all receivers.
                                         const result = try State.process(ctx);
                                         var writer = std.Io.Writer.fixed(buff);
                                         try Codec.encode(&writer, state_id, result);
-
                                         switch (result) {
                                             inline else => |new_fsm_state_wit| {
                                                 const NewState = @TypeOf(new_fsm_state_wit).State;
@@ -216,22 +198,14 @@ pub fn Runner(
                                             },
                                         }
                                     } else {
-                                        if (comptime std.mem.indexOfScalar(Role, receiver, curr_role)) |idx| {
-                                            //curr_role is the receiver
+                                        if (comptime std.mem.indexOfScalar(Role, receiver, curr_role)) |_| {
                                             return .{
                                                 .curr_id = curr_id_,
-                                                .point = .{
-                                                    .recv_result = .{
-                                                        .from = @backingInt(sender),
-                                                        .idx = @intCast(idx),
-                                                    },
-                                                },
+                                                .point = .{ .recv_result_from_role = @backingInt(sender) },
                                             };
                                         } else {
                                             switch (@typeInfo(State)) {
                                                 .@"union" => |U| {
-                                                    //The current round of communication for this protocol does not involve curr_role.
-                                                    // However, it still needs to check whether to notify external roles.
                                                     comptime std.debug.assert(U.field_names.len == 1);
                                                     const NewState = U.field_types[0].State;
                                                     const roles = comptime extern_targets(
@@ -240,9 +214,7 @@ pub fn Runner(
                                                         internal_roles,
                                                         extern_state,
                                                     );
-
                                                     const nid: u32 = @backingInt(idFromState(NewState));
-
                                                     return .{ .curr_id = curr_id_, .point = .{
                                                         .send_result = .{
                                                             .new_state_id = nid,
@@ -464,7 +436,7 @@ test "MakeRunner" {
         ep,
     );
 
-    ep = .{ .continue_recv = .{ .idx = 0, .result_str = result.point.send_result.result } };
+    ep = .{ .continue_recv = .{ .result_str = result.point.send_result.result } };
     const result2 = try BSuspendRunner.symmetric_run(
         &ctx.b,
         @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
