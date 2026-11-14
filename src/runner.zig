@@ -332,6 +332,47 @@ pub fn Runner(
     };
 }
 
+pub const Return = struct {
+    curr_id: u32,
+    point: union(enum) {
+        done: void,
+        recv_notify_from_role: u32, //from some role
+        send_result: struct {
+            result: []const u8,
+            receiver_roles: []const u32,
+            new_state_id: u32,
+            notify_roles: []const u32,
+        },
+        recv_result_from_role: u32, //from some role
+
+        send_notify: struct {
+            new_state_id: u32,
+            notify_roles: []const u32,
+        },
+    },
+
+    pub fn format(self: @This(), w: *std.Io.Writer) !void {
+        try w.print("\ncurr_id: {d}\n", .{self.curr_id});
+        try w.print("\npoint\n: {any}\n", .{self.point});
+    }
+};
+pub const EnterPoint = union(enum) {
+    start: void,
+    continue_recv: struct {
+        result_str: []const u8,
+    },
+};
+
+const RC = struct {
+    ctx: *anyopaque,
+    buff: []u8,
+    fun: *const fn (*anyopaque, []u8, u32, EnterPoint) anyerror!Return,
+
+    pub fn run(self: @This(), curr_id_: u32, enter_point: EnterPoint) !Return {
+        return try self.fun(self.ctx, self.buff, curr_id_, enter_point);
+    }
+};
+
 const PingPong = enum { a, b };
 const PingPongContext = struct { a: u32, b: void };
 
@@ -383,34 +424,39 @@ test "MakeRunner" {
 
     const PingPongRunner = Runner(Ping);
 
-    try PingPongRunner.simulate(PingPongContext, &ctx, PingPongRunner.idFromState(Ping));
-
     const Codec = @import("Codec.zig");
 
     const ASuspendRunner = PingPongRunner.MakeRunner(.a, Codec);
     const BSuspendRunner = PingPongRunner.MakeRunner(.b, Codec);
-    var buff: [100]u8 = undefined;
-    var ep: EnterPoint = .start;
-    const result = try ASuspendRunner.symmetric_run(
-        &ctx.a,
-        &buff,
+    // var ep: EnterPoint = .start;
+
+    var buff_a: [100]u8 = undefined;
+    const RCA: RC = .{
+        .ctx = &ctx.a,
+        .buff = &buff_a,
+        .fun = &ASuspendRunner.symmetric_run,
+    };
+
+    var buff_b: [100]u8 = undefined;
+    const RCB: RC = .{
+        .ctx = &ctx.b,
+        .buff = &buff_b,
+        .fun = &BSuspendRunner.symmetric_run,
+    };
+
+    const result = try RCA.run(
         @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
-        ep,
+        .start,
     );
 
-    const result1 = try BSuspendRunner.symmetric_run(
-        &ctx.b,
-        &buff,
+    const result1 = try RCB.run(
         @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
-        ep,
+        .start,
     );
-
-    ep = .{ .continue_recv = .{ .result_str = result.point.send_result.result } };
-    const result2 = try BSuspendRunner.symmetric_run(
-        &ctx.b,
-        &buff,
+    //
+    const result2 = try RCB.run(
         @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
-        ep,
+        .{ .continue_recv = .{ .result_str = result.point.send_result.result } },
     );
 
     std.debug.print("a, result: {f}\n", .{result});
@@ -420,40 +466,3 @@ test "MakeRunner" {
     std.debug.print("fun ptr: {any}\n", .{&ASuspendRunner.symmetric_run});
     std.debug.print("fun ptr: {any}\n", .{&BSuspendRunner.symmetric_run});
 }
-
-pub const Return = struct {
-    curr_id: u32,
-    point: union(enum) {
-        done: void,
-        recv_notify_from_role: u32, //from some role
-        send_result: struct {
-            result: []const u8,
-            receiver_roles: []const u32,
-            new_state_id: u32,
-            notify_roles: []const u32,
-        },
-        recv_result_from_role: u32, //from some role
-
-        send_notify: struct {
-            new_state_id: u32,
-            notify_roles: []const u32,
-        },
-    },
-
-    pub fn format(self: @This(), w: *std.Io.Writer) !void {
-        try w.print("\ncurr_id: {d}\n", .{self.curr_id});
-        try w.print("\npoint\n: {any}\n", .{self.point});
-    }
-};
-pub const EnterPoint = union(enum) {
-    start: void,
-    continue_recv: struct {
-        result_str: []const u8,
-    },
-};
-
-const RC = struct {
-    ctx: *anyopaque,
-    buff: []u8,
-    fun: *fn (*anyopaque, []u8, u32, EnterPoint) anyerror!void,
-};
