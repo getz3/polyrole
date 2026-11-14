@@ -73,7 +73,7 @@ pub fn Runner(
         pub fn ccc(comptime roles: []const Role) []const u32 {
             var tmp: []const u32 = &.{};
             inline for (roles) |r| {
-                tmp = tmp ++ &[_]u32{@as(u32, @intCast(@backingInt(r)))};
+                tmp = tmp ++ &[_]u32{@backingInt(r)};
             }
             return tmp;
         }
@@ -108,7 +108,7 @@ pub fn Runner(
             start: void,
             continue_recv: struct {
                 result_str: []const u8,
-                idx: u8,
+                idx: u4,
             },
         };
 
@@ -186,7 +186,7 @@ pub fn Runner(
                                         //P0
                                         return .{
                                             .curr_id = curr_id_,
-                                            .point = .{ .recv_notify = @intCast(@backingInt(internal_roles[0])) },
+                                            .point = .{ .recv_notify = @backingInt(internal_roles[0]) },
                                         };
                                     } else if (comptime curr_role == sender) {
                                         //The current role is the sender, which sends messages to all receivers.
@@ -222,7 +222,7 @@ pub fn Runner(
                                                 .curr_id = curr_id_,
                                                 .point = .{
                                                     .recv_result = .{
-                                                        .from = @intCast(@backingInt(sender)),
+                                                        .from = @backingInt(sender),
                                                         .idx = @intCast(idx),
                                                     },
                                                 },
