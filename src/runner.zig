@@ -78,37 +78,6 @@ pub fn Runner(
             return tmp;
         }
 
-        pub const Return = struct {
-            curr_id: u32,
-            point: union(enum) {
-                done: void,
-                recv_notify_from_role: u32, //from some role
-                send_result: struct {
-                    result: []const u8,
-                    receiver_roles: []const u32,
-                    new_state_id: u32,
-                    notify_roles: []const u32,
-                },
-                recv_result_from_role: u32, //from some role
-
-                send_notify: struct {
-                    new_state_id: u32,
-                    notify_roles: []const u32,
-                },
-            },
-
-            pub fn format(self: @This(), w: *std.Io.Writer) !void {
-                try w.print("\ncurr_id: {d}\n", .{self.curr_id});
-                try w.print("\npoint\n: {any}\n", .{self.point});
-            }
-        };
-        pub const EnterPoint = union(enum) {
-            start: void,
-            continue_recv: struct {
-                result_str: []const u8,
-            },
-        };
-
         pub fn MakeRunner(
             comptime curr_role: Role,
             comptime Codec: type,
@@ -117,8 +86,8 @@ pub fn Runner(
             return struct {
                 pub fn symmetric_run(
                     ctx_: *anyopaque,
-                    curr_id_: u32,
                     buff: []u8,
+                    curr_id_: u32,
                     enter_point: EnterPoint,
                 ) !Return {
                     @setEvalBranchQuota(10_000_000);
@@ -421,30 +390,70 @@ test "MakeRunner" {
     const ASuspendRunner = PingPongRunner.MakeRunner(.a, Codec);
     const BSuspendRunner = PingPongRunner.MakeRunner(.b, Codec);
     var buff: [100]u8 = undefined;
-    var ep: PingPongRunner.EnterPoint = .start;
+    var ep: EnterPoint = .start;
     const result = try ASuspendRunner.symmetric_run(
         &ctx.a,
-        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         &buff,
+        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         ep,
     );
 
     const result1 = try BSuspendRunner.symmetric_run(
         &ctx.b,
-        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         &buff,
+        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         ep,
     );
 
     ep = .{ .continue_recv = .{ .result_str = result.point.send_result.result } };
     const result2 = try BSuspendRunner.symmetric_run(
         &ctx.b,
-        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         &buff,
+        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         ep,
     );
 
     std.debug.print("a, result: {f}\n", .{result});
     std.debug.print("b, result: {f}\n", .{result1});
     std.debug.print("b, result: {f}\n", .{result2});
+
+    std.debug.print("fun ptr: {any}\n", .{&ASuspendRunner.symmetric_run});
+    std.debug.print("fun ptr: {any}\n", .{&BSuspendRunner.symmetric_run});
 }
+
+pub const Return = struct {
+    curr_id: u32,
+    point: union(enum) {
+        done: void,
+        recv_notify_from_role: u32, //from some role
+        send_result: struct {
+            result: []const u8,
+            receiver_roles: []const u32,
+            new_state_id: u32,
+            notify_roles: []const u32,
+        },
+        recv_result_from_role: u32, //from some role
+
+        send_notify: struct {
+            new_state_id: u32,
+            notify_roles: []const u32,
+        },
+    },
+
+    pub fn format(self: @This(), w: *std.Io.Writer) !void {
+        try w.print("\ncurr_id: {d}\n", .{self.curr_id});
+        try w.print("\npoint\n: {any}\n", .{self.point});
+    }
+};
+pub const EnterPoint = union(enum) {
+    start: void,
+    continue_recv: struct {
+        result_str: []const u8,
+    },
+};
+
+const RC = struct {
+    ctx: *anyopaque,
+    buff: []u8,
+    fun: *fn (*anyopaque, []u8, u32, EnterPoint) anyerror!void,
+};
