@@ -122,7 +122,7 @@ pub fn Runner(
                     ctx_: *anyopaque,
                     curr_id_: u32,
                     buff: []u8,
-                    enter_point: *EnterPoint,
+                    enter_point: EnterPoint,
                 ) !Return {
                     @setEvalBranchQuota(10_000_000);
                     const curr_id: StateId = @fromBackingInt(@intCast(curr_id_));
@@ -141,7 +141,7 @@ pub fn Runner(
                             const internal_roles = comptime @TypeOf(info).internal_roles;
                             const extern_state = comptime @TypeOf(info).extern_state;
 
-                            switch (enter_point.*) {
+                            switch (enter_point) {
                                 .continue_recv => |continue_value| {
                                     var reader = std.Io.Reader.fixed(continue_value.result_str);
 
@@ -454,14 +454,14 @@ test "MakeRunner" {
         &ctx.a,
         @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         &buff,
-        &ep,
+        ep,
     );
 
     const result1 = try BSuspendRunner.symmetric_run(
         &ctx.b,
         @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         &buff,
-        &ep,
+        ep,
     );
 
     ep = .{ .continue_recv = .{ .idx = 0, .result_str = result.point.send_result.result } };
@@ -469,7 +469,7 @@ test "MakeRunner" {
         &ctx.b,
         @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         &buff,
-        &ep,
+        ep,
     );
 
     std.debug.print("a, result: {f}\n", .{result});
