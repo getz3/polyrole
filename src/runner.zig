@@ -363,16 +363,74 @@ pub const EnterPoint = union(enum) {
     },
 };
 
+pub const RecvMap = std.AutoHashMap(u32, []u8);
+
 const RC = struct {
     ctx: *anyopaque,
     buff: []u8,
     fun: *const fn (*anyopaque, []u8, u32, EnterPoint) anyerror!Return,
+    recvs_map: RecvMap,
 
     pub fn run(self: @This(), curr_id_: u32, enter_point: EnterPoint) !Return {
         return try self.fun(self.ctx, self.buff, curr_id_, enter_point);
     }
 };
 
+const ProtocolId = u32;
+const Key = struct {
+    pid: ProtocolId,
+    role: u32,
+};
+const Action = struct {
+    key: Key,
+    curr_id_: u32,
+    enter_point: EnterPoint,
+};
+
+const ProtocolMap = std.AutoHashMap(Key, RC);
+const RunContext = struct {
+    pmap: ProtocolMap,
+    actions: std.Deque(Action),
+
+    pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+        self.pmap.deinit();
+        self.actions.deinit(gpa);
+    }
+
+    const Codec = @import("Codec.zig");
+    pub fn run(self: *@This(), gpa: std.mem.Allocator) !void {
+        while (self.actions.popFront()) |action| {
+            const rc = self.pmap.get(action.key).?;
+            const result = try rc.run(action.curr_id_, action.enter_point);
+            const curr_id = result.curr_id;
+            switch (result.point) {
+                .done => {},
+                .recv_notify_from_role => |role| {
+                    if (rc.recv_from_role) |rr| {
+                        std.debug.assert(role == rr);
+                        //decode Notify
+                        var reader = std.Io.Reader.fixed(rc.buff);
+                        const n = try Codec.decode(&reader, curr_id, Notify);
+                        try self.actions.pushBack(gpa, .{
+                            .curr_id_ = n.polyrole_notify,
+                            .enter_point = .start,
+                        });
+                    } else {
+                        try self.actions.pushBack(gpa, action);
+                    }
+                },
+                .send_result => |val| {
+                    _ = val;
+                    // for (val.receiver_roles) |role| {
+                    //     const recv_rc = self.pmap.get(.{ .pid = action.key.pid, .role = role }).?;
+                    // }
+                },
+            }
+        }
+    }
+};
+
+//example
 const PingPong = enum { a, b };
 const PingPongContext = struct { a: u32, b: void };
 
@@ -421,6 +479,11 @@ const Pong = union(enum) {
 
 test "MakeRunner" {
     var ctx: PingPongContext = .{ .a = 0, .b = {} };
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var pmap: ProtocolMap = .init(allocator);
+    defer pmap.deinit();
 
     const PingPongRunner = Runner(Ping);
 
@@ -428,33 +491,37 @@ test "MakeRunner" {
 
     const ASuspendRunner = PingPongRunner.MakeRunner(.a, Codec);
     const BSuspendRunner = PingPongRunner.MakeRunner(.b, Codec);
-    // var ep: EnterPoint = .start;
 
     var buff_a: [100]u8 = undefined;
-    const RCA: RC = .{
+    const rc_a: RC = .{
         .ctx = &ctx.a,
         .buff = &buff_a,
         .fun = &ASuspendRunner.symmetric_run,
+        .recvs_map = .init(allocator),
     };
 
     var buff_b: [100]u8 = undefined;
-    const RCB: RC = .{
+    const rc_b: RC = .{
         .ctx = &ctx.b,
         .buff = &buff_b,
         .fun = &BSuspendRunner.symmetric_run,
+        .recvs_map = .init(allocator),
     };
 
-    const result = try RCA.run(
+    try pmap.put(.{ .pid = 0, .role = @backingInt(PingPong.a) }, rc_a);
+    try pmap.put(.{ .pid = 0, .role = @backingInt(PingPong.b) }, rc_b);
+
+    const result = try rc_a.run(
         @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         .start,
     );
 
-    const result1 = try RCB.run(
+    const result1 = try rc_b.run(
         @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         .start,
     );
     //
-    const result2 = try RCB.run(
+    const result2 = try rc_b.run(
         @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
         .{ .continue_recv = .{ .result_str = result.point.send_result.result } },
     );
