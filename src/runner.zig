@@ -363,7 +363,12 @@ pub const EnterPoint = union(enum) {
     },
 };
 
-pub const RecvMap = std.AutoHashMap(u32, []u8);
+const ProtocolId = u32;
+const Key = struct {
+    pid: ProtocolId,
+    role: u32,
+};
+pub const RecvMap = std.AutoHashMap(Key, []u8);
 
 const RC = struct {
     ctx: *anyopaque,
@@ -376,11 +381,6 @@ const RC = struct {
     }
 };
 
-const ProtocolId = u32;
-const Key = struct {
-    pid: ProtocolId,
-    role: u32,
-};
 const Action = struct {
     key: Key,
     curr_id_: u32,
@@ -400,16 +400,15 @@ const RunContext = struct {
     const Codec = @import("Codec.zig");
     pub fn run(self: *@This(), gpa: std.mem.Allocator) !void {
         while (self.actions.popFront()) |action| {
+            const pid = action.key.pid;
             const rc = self.pmap.get(action.key).?;
-            const result = try rc.run(action.curr_id_, action.enter_point);
-            const curr_id = result.curr_id;
-            switch (result.point) {
+            const rt = try rc.run(action.curr_id_, action.enter_point);
+            const curr_id = rt.curr_id;
+            switch (rt.point) {
                 .done => {},
                 .recv_notify_from_role => |role| {
-                    if (rc.recv_from_role) |rr| {
-                        std.debug.assert(role == rr);
-                        //decode Notify
-                        var reader = std.Io.Reader.fixed(rc.buff);
+                    if (rc.recvs_map.get(Key{ .pid = pid, .role = role })) |msg| {
+                        var reader = std.Io.Reader.fixed(msg);
                         const n = try Codec.decode(&reader, curr_id, Notify);
                         try self.actions.pushBack(gpa, .{
                             .curr_id_ = n.polyrole_notify,
