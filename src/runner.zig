@@ -5,6 +5,7 @@ const StateMap = root.StateMap;
 const Exit = root.Exit;
 const Notify = root.Notify;
 const Data = root.Data;
+const Codec_ = @import("Codec.zig");
 
 pub fn Runner(
     comptime State_: type,
@@ -369,13 +370,13 @@ pub const Key = struct {
     role: u32,
 };
 
-pub const RecvList = [4](std.Deque([]u8)); // idx: role, val: [str, str, ...]
+pub const RecvList = std.ArrayList(std.Deque([]u8)); // idx: role, val: [str, str, ...]
 
 pub const RoleContext = struct {
     ctx: *anyopaque,
     buff: []u8,
     fun: *const fn (*anyopaque, []u8, u32, EnterPoint) anyerror!Return,
-    recv_list: RecvList = .{ .empty, .empty, .empty, .empty },
+    recv_list: RecvList,
 
     pub fn run(self: @This(), curr_id_: u32, enter_point: EnterPoint) !Return {
         return try self.fun(self.ctx, self.buff, curr_id_, enter_point);
@@ -393,19 +394,58 @@ pub const RunContext = struct {
     pmap: ProtocolMap,
     actions: std.Deque(Action),
 
+    pub fn init(self: *@This(), gpa: std.mem.Allocator) void {
+        self.pmap = .init(gpa);
+        self.actions = .empty;
+    }
+
+    pub fn append_protocol(
+        self: *@This(),
+        gpa: std.mem.Allocator,
+        pid: u32,
+        buff_size: usize,
+        ctx: anytype,
+        EnterState: type,
+    ) !void {
+        const PRunner = Runner(EnterState);
+        const curr_id = PRunner.idFromState(EnterState);
+        const Role: type = PRunner.Role;
+        const len = @typeInfo(Role).@"enum".field_names.len;
+        inline for (@typeInfo(Role).@"enum".field_names, 0..) |name, idx| {
+            const RR = PRunner.MakeRunner(@fromBackingInt(idx), Codec_);
+            var rc: RoleContext = .{
+                .ctx = &@field(ctx, name),
+                .buff = try gpa.alloc(u8, buff_size),
+                .fun = &RR.symmetric_run,
+                .recv_list = try .initCapacity(gpa, len),
+            };
+            for (0..len) |_| {
+                rc.recv_list.appendAssumeCapacity(.empty);
+            }
+            const key: Key = .{ .pid = pid, .role = @intCast(idx) };
+            try self.pmap.put(key, rc);
+            const start_id: u32 = @backingInt(curr_id);
+            try self.actions.pushBack(gpa, .{
+                .key = key,
+                .curr_id_ = start_id,
+                .enter_point = .start,
+            });
+        }
+    }
+
     pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
         var iter = self.pmap.valueIterator();
         while (iter.next()) |val| {
-            val.recv_list[0].deinit(gpa);
-            val.recv_list[1].deinit(gpa);
-            val.recv_list[2].deinit(gpa);
-            val.recv_list[3].deinit(gpa);
+            gpa.free(val.buff);
+            for (val.recv_list.items) |*rcv| {
+                rcv.deinit(gpa);
+            }
+            val.recv_list.deinit(gpa);
         }
         self.pmap.deinit();
         self.actions.deinit(gpa);
     }
 
-    const Codec = @import("Codec.zig");
     pub fn run(self: *@This(), gpa: std.mem.Allocator) !void {
         while (self.actions.popFront()) |action| {
             const key = action.key;
@@ -417,10 +457,10 @@ pub const RunContext = struct {
             switch (rt.point) {
                 .done => {},
                 .recv_notify_from_role => |role| {
-                    if (rc.recv_list[@intCast(role)].popFront()) |msg| {
+                    if (rc.recv_list.items[@intCast(role)].popFront()) |msg| {
                         defer gpa.free(msg);
                         var reader = std.Io.Reader.fixed(msg);
-                        const n = try Codec.decode(&reader, curr_id, Notify);
+                        const n = try Codec_.decode(&reader, curr_id, Notify);
                         try self.actions.pushBack(gpa, .{
                             .key = key,
                             .curr_id_ = n.polyrole_notify,
@@ -431,7 +471,7 @@ pub const RunContext = struct {
                     }
                 },
                 .recv_result_from_role => |role| {
-                    if (rc.recv_list[@intCast(role)].popFront()) |msg| {
+                    if (rc.recv_list.items[@intCast(role)].popFront()) |msg| {
                         defer gpa.free(msg);
                         @memcpy(rc.buff[0..msg.len], msg);
                         try self.actions.pushBack(gpa, .{
@@ -451,10 +491,10 @@ pub const RunContext = struct {
                         var allocating = std.Io.Writer.Allocating.init(gpa);
                         defer allocating.deinit();
                         const writer = &allocating.writer;
-                        try Codec.encode(writer, curr_id, Notify{
+                        try Codec_.encode(writer, curr_id, Notify{
                             .polyrole_notify = val.new_state_id,
                         });
-                        try other_rc.recv_list[@intCast(curr_role)].pushBack(
+                        try other_rc.recv_list.items[@intCast(curr_role)].pushBack(
                             gpa,
                             try gpa.dupe(u8, writer.buffered()),
                         );
@@ -468,17 +508,17 @@ pub const RunContext = struct {
                 .send_result => |val| {
                     for (val.receiver_roles) |recv_role| {
                         const recv_rc = self.pmap.getPtr(.{ .pid = pid, .role = recv_role }).?;
-                        try recv_rc.recv_list[@intCast(curr_role)].pushBack(gpa, try gpa.dupe(u8, val.result));
+                        try recv_rc.recv_list.items[@intCast(curr_role)].pushBack(gpa, try gpa.dupe(u8, val.result));
                     }
                     for (val.notify_roles) |other_role| {
                         const other_rc = self.pmap.getPtr(.{ .pid = pid, .role = other_role }).?;
                         var allocating = std.Io.Writer.Allocating.init(gpa);
                         defer allocating.deinit();
                         const writer = &allocating.writer;
-                        try Codec.encode(writer, curr_id, Notify{
+                        try Codec_.encode(writer, curr_id, Notify{
                             .polyrole_notify = val.new_state_id,
                         });
-                        try other_rc.recv_list[@intCast(curr_role)].pushBack(
+                        try other_rc.recv_list.items[@intCast(curr_role)].pushBack(
                             gpa,
                             try gpa.dupe(u8, writer.buffered()),
                         );
@@ -537,63 +577,22 @@ const Pong = union(enum) {
     pub const info = pingpogn_info("Ping", .b, &.{.a});
 
     pub fn process(_: *info.Ctx(.b)) !@This() {
-        // std.debug.print("------------nice\n", .{});
         return .pong;
     }
 };
 
 test "MakeRunner" {
     var ctx: PingPongContext = .{ .a = 0, .b = {} };
+    var ctx1: PingPongContext = .{ .a = 0, .b = {} };
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    var run_context: RunContext = .{
-        .pmap = .init(allocator),
-        .actions = .empty,
-    };
+    var run_context: RunContext = undefined;
+    run_context.init(allocator);
     defer run_context.deinit(allocator);
 
-    const PingPongRunner = Runner(Ping);
-
-    const Codec = @import("Codec.zig");
-
-    const ASuspendRunner = PingPongRunner.MakeRunner(.a, Codec);
-    const BSuspendRunner = PingPongRunner.MakeRunner(.b, Codec);
-
-    var buff_a: [100]u8 = undefined;
-    const rc_a: RoleContext = .{
-        .ctx = &ctx.a,
-        .buff = &buff_a,
-        .fun = &ASuspendRunner.symmetric_run,
-    };
-
-    var buff_b: [100]u8 = undefined;
-    const rc_b: RoleContext = .{
-        .ctx = &ctx.b,
-        .buff = &buff_b,
-        .fun = &BSuspendRunner.symmetric_run,
-    };
-
-    // run_context.
-    const key_a: Key = .{ .pid = 0, .role = @backingInt(PingPong.a) };
-    const key_b: Key = .{ .pid = 0, .role = @backingInt(PingPong.b) };
-
-    try run_context.pmap.put(key_a, rc_a);
-    try run_context.pmap.put(key_b, rc_b);
-
-    const start_id: u32 = @backingInt(PingPongRunner.idFromState(Ping));
-
-    try run_context.actions.pushBack(allocator, .{
-        .key = key_a,
-        .curr_id_ = start_id,
-        .enter_point = .start,
-    });
-
-    try run_context.actions.pushBack(allocator, .{
-        .key = key_b,
-        .curr_id_ = start_id,
-        .enter_point = .start,
-    });
+    try run_context.append_protocol(allocator, 0, 100, &ctx, Ping);
+    try run_context.append_protocol(allocator, 1, 100, &ctx1, Ping);
 
     try run_context.run(allocator);
 }

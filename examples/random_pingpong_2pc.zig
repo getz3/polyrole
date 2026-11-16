@@ -18,83 +18,16 @@ pub fn main(init: std.process.Init) !void {
         .selector = .{},
     };
 
-    var run_context: runner.RunContext = .{
-        .pmap = .init(allocator),
-        .actions = .empty,
-    };
+    var run_context: runner.RunContext = undefined;
+    run_context.init(allocator);
     defer run_context.deinit(allocator);
-
-    const Rpp2pc = runner.Runner(EnterFsmState);
-    const Codec = polyrole.Codec;
-
-    const AliceR = Rpp2pc.MakeRunner(.alice, Codec);
-    const BobR = Rpp2pc.MakeRunner(.bob, Codec);
-    const CharlieR = Rpp2pc.MakeRunner(.charlie, Codec);
-    const SelectorR = Rpp2pc.MakeRunner(.selector, Codec);
-
-    var buff_alice: [100]u8 = undefined;
-    const rc_alice: runner.RoleContext = .{
-        .ctx = &ctx.alice,
-        .buff = &buff_alice,
-        .fun = &AliceR.symmetric_run,
-    };
-
-    var buff_bob: [100]u8 = undefined;
-    const rc_bob: runner.RoleContext = .{
-        .ctx = &ctx.bob,
-        .buff = &buff_bob,
-        .fun = &BobR.symmetric_run,
-    };
-
-    var buff_charlie: [100]u8 = undefined;
-    const rc_charlie: runner.RoleContext = .{
-        .ctx = &ctx.charlie,
-        .buff = &buff_charlie,
-        .fun = &CharlieR.symmetric_run,
-    };
-
-    var buff_selector: [100]u8 = undefined;
-    const rc_selector: runner.RoleContext = .{
-        .ctx = &ctx.selector,
-        .buff = &buff_selector,
-        .fun = &SelectorR.symmetric_run,
-    };
-
-    const key_alice: runner.Key = .{ .pid = 0, .role = @backingInt(AllRole.alice) };
-    const key_bob: runner.Key = .{ .pid = 0, .role = @backingInt(AllRole.bob) };
-    const key_charlie: runner.Key = .{ .pid = 0, .role = @backingInt(AllRole.charlie) };
-    const key_selector: runner.Key = .{ .pid = 0, .role = @backingInt(AllRole.selector) };
-
-    try run_context.pmap.put(key_alice, rc_alice);
-    try run_context.pmap.put(key_bob, rc_bob);
-    try run_context.pmap.put(key_charlie, rc_charlie);
-    try run_context.pmap.put(key_selector, rc_selector);
-
-    const start_id: u32 = @backingInt(curr_id);
-
-    try run_context.actions.pushBack(allocator, .{
-        .key = key_alice,
-        .curr_id_ = start_id,
-        .enter_point = .start,
-    });
-
-    try run_context.actions.pushBack(allocator, .{
-        .key = key_bob,
-        .curr_id_ = start_id,
-        .enter_point = .start,
-    });
-
-    try run_context.actions.pushBack(allocator, .{
-        .key = key_charlie,
-        .curr_id_ = start_id,
-        .enter_point = .start,
-    });
-
-    try run_context.actions.pushBack(allocator, .{
-        .key = key_selector,
-        .curr_id_ = start_id,
-        .enter_point = .start,
-    });
+    try run_context.append_protocol(
+        allocator,
+        0,
+        100,
+        &ctx,
+        EnterFsmState,
+    );
 
     try run_context.run(allocator);
 }
