@@ -208,28 +208,31 @@ pub fn Runner(
                                 .continue_recv => |received| {
                                     var reader = std.Io.Reader.fixed(received.payload);
                                     const result = try Codec.decode(&reader, state_id, State);
-                                    const receiver_index = comptime std.mem.indexOfScalar(Role, receiver, curr_role) orelse 10000;
-                                    const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{receiver_index});
-                                    if (@hasDecl(State, fn_name)) {
-                                        try @field(State, fn_name)(ctx, result);
-                                    }
-                                    switch (result) {
-                                        inline else => |next| {
-                                            const NewState = @TypeOf(next).State;
-                                            const notify_roles = comptime extern_targets(
-                                                curr_role,
-                                                NewState,
-                                                internal_roles,
-                                                extern_state,
-                                            );
-                                            const new_state_id: u32 = @backingInt(idFromState(NewState));
-                                            return .{ .curr_id = raw_state_id, .action = .{
-                                                .send_notify = .{
-                                                    .new_state_id = new_state_id,
-                                                    .notify_roles = comptime roleIds(notify_roles),
-                                                },
-                                            } };
-                                        },
+                                    if (comptime std.mem.indexOfScalar(Role, receiver, curr_role)) |receiver_index| {
+                                        const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{receiver_index});
+                                        if (@hasDecl(State, fn_name)) {
+                                            try @field(State, fn_name)(ctx, result);
+                                        }
+                                        switch (result) {
+                                            inline else => |next| {
+                                                const NewState = @TypeOf(next).State;
+                                                const notify_roles = comptime extern_targets(
+                                                    curr_role,
+                                                    NewState,
+                                                    internal_roles,
+                                                    extern_state,
+                                                );
+                                                const new_state_id: u32 = @backingInt(idFromState(NewState));
+                                                return .{ .curr_id = raw_state_id, .action = .{
+                                                    .send_notify = .{
+                                                        .new_state_id = new_state_id,
+                                                        .notify_roles = comptime roleIds(notify_roles),
+                                                    },
+                                                } };
+                                            },
+                                        }
+                                    } else {
+                                        return error.NotAReceiver;
                                     }
                                 },
                                 .start => {
