@@ -1,6 +1,6 @@
 # Polyrole
 
-Polyrole is a distributed protocol construction library built on Zig's type system. A protocol is a deterministic state graph: states are tagged unions, transitions are type parameters, and each role's behavior is dispatched by its role. Communication is isolated behind replaceable channels.
+Polyrole is a multi-role state machine library built on Zig's type system. A protocol is a deterministic state graph: states are tagged unions, transitions are type parameters, and each role's behavior is dispatched by its role. Roles may run in one thread, in separate threads, or across a network; communication is isolated behind replaceable channels.
 
 ## Protocol as a State Graph
 
@@ -28,6 +28,8 @@ Every state also carries `info`: `sender` and `receiver`, while `@TypeOf(info)` 
 - **non-participant**: executes nothing and waits for a `Notify` that moves it to the next state.
 
 Each role therefore follows one deterministic path through the graph.
+
+The protocol does not depend on networking: `simulate` runs every role in one thread without channels, `symmetric_run` adds channels, and `RoleRunner` exposes one step so an event loop or scheduler can drive it.
 
 ## Branches and Notification
 
