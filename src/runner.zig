@@ -392,33 +392,33 @@ pub const Key = struct {
     role: u32,
 };
 
-///One queue per remote role; each element is an encoded message.
-pub const Inbox = std.ArrayList(std.Deque([]u8));
-
-pub const RoleContext = struct {
-    context: *anyopaque,
-    buffer: []u8,
-    entry: *const fn (*anyopaque, []u8, u32, Resume) anyerror!Outcome,
-    inbox: Inbox,
-
-    pub fn run(self: @This(), raw_state_id: u32, resume_from: Resume) !Outcome {
-        return try self.entry(self.context, self.buffer, raw_state_id, resume_from);
-    }
-};
-
-pub const Action = struct {
-    key: Key,
-    state_id: u32,
-    resume_from: Resume,
-};
-
-pub const ProtocolMap = std.AutoHashMap(Key, RoleContext);
-
 ///Cooperative scheduler: queues one `Action` per role and drains the queue,
 ///routing encoded messages between role inboxes.
 pub const Scheduler = struct {
     protocols: ProtocolMap,
     actions: std.Deque(Action),
+
+    ///One queue per remote role; each element is an encoded message.
+    pub const Inbox = std.ArrayList(std.Deque([]u8));
+
+    pub const RoleContext = struct {
+        context: *anyopaque,
+        buffer: []u8,
+        entry: *const fn (*anyopaque, []u8, u32, Resume) anyerror!Outcome,
+        inbox: Inbox,
+
+        pub fn run(self: @This(), raw_state_id: u32, resume_from: Resume) !Outcome {
+            return try self.entry(self.context, self.buffer, raw_state_id, resume_from);
+        }
+    };
+
+    pub const Action = struct {
+        key: Key,
+        state_id: u32,
+        resume_from: Resume,
+    };
+
+    pub const ProtocolMap = std.AutoHashMap(Key, RoleContext);
 
     pub fn init(self: *@This(), gpa: std.mem.Allocator) void {
         self.protocols = .init(gpa);
