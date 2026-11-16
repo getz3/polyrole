@@ -358,8 +358,22 @@ pub const Outcome = struct {
     },
 
     pub fn format(self: @This(), w: *std.Io.Writer) !void {
-        try w.print("\ncurr_id: {d}\n", .{self.curr_id});
-        try w.print("\naction\n: {any}\n", .{self.action});
+        try w.print("Outcome{{ curr_id: {d}, action: ", .{self.curr_id});
+        switch (self.action) {
+            .done => try w.writeAll("done"),
+            .recv_notify_from_role => |role| try w.print("recv_notify_from_role({d})", .{role}),
+            .recv_result_from_role => |role| try w.print("recv_result_from_role({d})", .{role}),
+            .send_notify => |notify| try w.print("send_notify{{ new_state_id: {d}, notify_roles: {any} }}", .{ notify.new_state_id, notify.notify_roles }),
+            .send_result => |send| {
+                try w.print("send_result{{ receiver_roles: {any}, new_state_id: {d}, notify_roles: {any}, result: {d} bytes }}", .{
+                    send.receiver_roles,
+                    send.new_state_id,
+                    send.notify_roles,
+                    send.result.len,
+                });
+            },
+        }
+        try w.writeAll(" }");
     }
 };
 
