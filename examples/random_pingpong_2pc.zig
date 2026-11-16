@@ -26,10 +26,10 @@ pub fn main(init: std.process.Init) !void {
         .selector = .{},
     };
 
-    var run_context: runner.RunContext = undefined;
-    run_context.init(allocator);
-    defer run_context.deinit(allocator);
-    try run_context.append_protocol(
+    var scheduler: runner.Scheduler = undefined;
+    scheduler.init(allocator);
+    defer scheduler.deinit(allocator);
+    try scheduler.append_protocol(
         allocator,
         0,
         100,
@@ -38,7 +38,7 @@ pub fn main(init: std.process.Init) !void {
         EnterFsmState,
     );
 
-    try run_context.append_protocol(
+    try scheduler.append_protocol(
         allocator,
         1,
         100,
@@ -47,7 +47,7 @@ pub fn main(init: std.process.Init) !void {
         EnterFsmState,
     );
 
-    try run_context.run(allocator, Codec);
+    try scheduler.run(allocator, Codec);
 }
 
 //

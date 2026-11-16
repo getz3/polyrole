@@ -402,7 +402,7 @@ pub const ProtocolMap = std.AutoHashMap(Key, RoleContext);
 
 ///Cooperative scheduler: queues one `Action` per role and drains the queue,
 ///routing encoded messages between role inboxes.
-pub const RunContext = struct {
+pub const Scheduler = struct {
     protocols: ProtocolMap,
     actions: std.Deque(Action),
 
@@ -602,15 +602,15 @@ test "RoleRunner" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    var run_context: RunContext = undefined;
-    run_context.init(allocator);
-    defer run_context.deinit(allocator);
+    var scheduler: Scheduler = undefined;
+    scheduler.init(allocator);
+    defer scheduler.deinit(allocator);
 
     const Codec = @import("Codec.zig");
-    try run_context.append_protocol(allocator, 0, 100, Codec, &ctx, Prot.Ping);
-    try run_context.append_protocol(allocator, 1, 100, Codec, &ctx1, Prot.Ping);
+    try scheduler.append_protocol(allocator, 0, 100, Codec, &ctx, Prot.Ping);
+    try scheduler.append_protocol(allocator, 1, 100, Codec, &ctx1, Prot.Ping);
 
-    try run_context.run(allocator, Codec);
+    try scheduler.run(allocator, Codec);
 
     try testing.expectEqual(ctx.a, 10);
     try testing.expectEqual(ctx1.a, 10);
