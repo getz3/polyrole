@@ -26,12 +26,12 @@ pub fn main(init: std.process.Init) !void {
         .selector = .{},
     };
 
-    var scheduler: runner.Scheduler = undefined;
+    var scheduler: runner.PrototypeScheduler = undefined;
     scheduler.init(allocator);
     defer scheduler.deinit(allocator);
     try scheduler.append_protocol(
         allocator,
-        0,
+        @fromBackingInt(0),
         100,
         Codec,
         &ctx,
@@ -40,7 +40,7 @@ pub fn main(init: std.process.Init) !void {
 
     try scheduler.append_protocol(
         allocator,
-        1,
+        @fromBackingInt(1),
         100,
         Codec,
         &ctx1,

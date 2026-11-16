@@ -389,15 +389,20 @@ pub const Resume = union(enum) {
     },
 };
 
-pub const ProtocolId = u32;
-pub const Key = struct {
+pub const ProtocolId = enum(u32) {
+    _,
+};
+
+pub const Intersection = struct {
     pid: ProtocolId,
     role: u32,
 };
 
-///Cooperative scheduler: queues one `Action` per role and drains the queue,
-///routing encoded messages between role inboxes.
-pub const Scheduler = struct {
+///Prototype scheduler used to exercise `RoleRunner`: queues one `Action` per
+///role and drains the queue, routing encoded messages between role inboxes.
+///It validates that the single-step runner drives a protocol correctly; it is
+///not meant to be the production driver.
+pub const PrototypeScheduler = struct {
     protocols: ProtocolMap,
     actions: std.Deque(Action),
 
@@ -416,12 +421,12 @@ pub const Scheduler = struct {
     };
 
     pub const Action = struct {
-        key: Key,
+        key: Intersection,
         state_id: u32,
         resume_from: Resume,
     };
 
-    pub const ProtocolMap = std.AutoHashMap(Key, RoleContext);
+    pub const ProtocolMap = std.AutoHashMap(Intersection, RoleContext);
 
     pub fn init(self: *@This(), gpa: std.mem.Allocator) void {
         self.protocols = .init(gpa);
@@ -431,7 +436,7 @@ pub const Scheduler = struct {
     pub fn append_protocol(
         self: *@This(),
         gpa: std.mem.Allocator,
-        pid: u32,
+        pid: ProtocolId,
         buff_size: usize,
         Codec: type,
         ctx: anytype,
@@ -452,7 +457,7 @@ pub const Scheduler = struct {
             for (0..len) |_| {
                 role_ctx.inbox.appendAssumeCapacity(.empty);
             }
-            const key: Key = .{ .pid = pid, .role = @intCast(idx) };
+            const key: Intersection = .{ .pid = pid, .role = @intCast(idx) };
             try self.protocols.put(key, role_ctx);
             const raw_start_id: u32 = @backingInt(start_id);
             try self.actions.pushBack(gpa, .{
@@ -619,13 +624,13 @@ test "RoleRunner" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    var scheduler: Scheduler = undefined;
+    var scheduler: PrototypeScheduler = undefined;
     scheduler.init(allocator);
     defer scheduler.deinit(allocator);
 
     const Codec = @import("Codec.zig");
-    try scheduler.append_protocol(allocator, 0, 100, Codec, &ctx, Prot.Ping);
-    try scheduler.append_protocol(allocator, 1, 100, Codec, &ctx1, Prot.Ping);
+    try scheduler.append_protocol(allocator, @fromBackingInt(0), 100, Codec, &ctx, Prot.Ping);
+    try scheduler.append_protocol(allocator, @fromBackingInt(1), 100, Codec, &ctx1, Prot.Ping);
 
     try scheduler.run(allocator, Codec);
 
