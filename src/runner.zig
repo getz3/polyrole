@@ -5,7 +5,6 @@ const StateMap = root.StateMap;
 const Exit = root.Exit;
 const Notify = root.Notify;
 const Data = root.Data;
-const Codec_ = @import("Codec.zig");
 
 pub fn Runner(
     comptime State_: type,
@@ -54,154 +53,21 @@ pub fn Runner(
 
                     //The receiver's handler function is chosen by its position in `receiver`,
                     //the same convention `symmetric_run` follows.
-                    inline for (receiver, 0..) |rvr, idx| {
+                    inline for (receiver, 0..) |recv_role, idx| {
                         const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{idx});
                         if (@hasDecl(State, fn_name)) {
-                            try @field(State, fn_name)(&@field(context, @tagName(rvr)), result);
+                            try @field(State, fn_name)(&@field(context, @tagName(recv_role)), result);
                         }
                     }
 
                     switch (result) {
-                        inline else => |new_fsm_state_wit| {
-                            const NewState = @TypeOf(new_fsm_state_wit).State;
+                        inline else => |next| {
+                            const NewState = @TypeOf(next).State;
                             continue :sw comptime idFromState(NewState);
                         },
                     }
                 },
             }
-        }
-
-        pub fn ccc(comptime roles: []const Role) []const u32 {
-            var tmp: []const u32 = &.{};
-            inline for (roles) |r| {
-                tmp = tmp ++ &[_]u32{@backingInt(r)};
-            }
-            return tmp;
-        }
-
-        pub fn MakeRunner(
-            comptime curr_role: Role,
-            comptime Codec: type,
-        ) type {
-            const Ctx = State_.info.Ctx(curr_role);
-            return struct {
-                pub fn symmetric_run(
-                    ctx_: *anyopaque,
-                    buff: []u8,
-                    curr_id_: u32,
-                    enter_point: EnterPoint,
-                ) !Return {
-                    @setEvalBranchQuota(10_000_000);
-                    const curr_id: StateId = @fromBackingInt(@intCast(curr_id_));
-                    const ctx: *Ctx = @ptrCast(@alignCast(ctx_));
-                    switch (curr_id) {
-                        inline else => |state_id| {
-                            const State = StateFromId(state_id);
-                            if (comptime State == Exit) return .{
-                                .curr_id = curr_id_,
-                                .point = .done,
-                            };
-
-                            const info = comptime State.info;
-                            const sender: Role = comptime info.sender;
-                            const receiver: []const Role = comptime info.receiver;
-                            const internal_roles = comptime @TypeOf(info).internal_roles;
-                            const extern_state = comptime @TypeOf(info).extern_state;
-
-                            switch (enter_point) {
-                                .continue_recv => |continue_value| {
-                                    var reader = std.Io.Reader.fixed(continue_value.result_str);
-                                    const result = try Codec.decode(&reader, state_id, State);
-                                    const idx = comptime std.mem.indexOfScalar(Role, receiver, curr_role) orelse 10000;
-                                    const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{idx});
-                                    if (@hasDecl(State, fn_name)) {
-                                        try @field(State, fn_name)(ctx, result);
-                                    }
-                                    switch (result) {
-                                        inline else => |new_fsm_state_wit| {
-                                            const NewState = @TypeOf(new_fsm_state_wit).State;
-                                            const roles = comptime extern_targets(
-                                                curr_role,
-                                                NewState,
-                                                internal_roles,
-                                                extern_state,
-                                            );
-                                            const nid: u32 = @backingInt(idFromState(NewState));
-                                            return .{ .curr_id = curr_id_, .point = .{
-                                                .send_notify = .{
-                                                    .new_state_id = nid,
-                                                    .notify_roles = comptime ccc(roles),
-                                                },
-                                            } };
-                                        },
-                                    }
-                                },
-                                .start => {
-                                    if (comptime std.mem.indexOfScalar(Role, internal_roles, curr_role) == null) {
-                                        return .{
-                                            .curr_id = curr_id_,
-                                            .point = .{ .recv_notify_from_role = @backingInt(internal_roles[0]) },
-                                        };
-                                    } else if (comptime curr_role == sender) {
-                                        const result = try State.process(ctx);
-                                        var writer = std.Io.Writer.fixed(buff);
-                                        try Codec.encode(&writer, state_id, result);
-                                        switch (result) {
-                                            inline else => |new_fsm_state_wit| {
-                                                const NewState = @TypeOf(new_fsm_state_wit).State;
-                                                const roles = comptime extern_targets(
-                                                    curr_role,
-                                                    NewState,
-                                                    internal_roles,
-                                                    extern_state,
-                                                );
-                                                const nid: u32 = @backingInt(idFromState(NewState));
-
-                                                return .{ .curr_id = curr_id_, .point = .{
-                                                    .send_result = .{
-                                                        .result = writer.buffered(),
-                                                        .receiver_roles = comptime ccc(receiver),
-                                                        .new_state_id = nid,
-                                                        .notify_roles = comptime ccc(roles),
-                                                    },
-                                                } };
-                                            },
-                                        }
-                                    } else {
-                                        if (comptime std.mem.indexOfScalar(Role, receiver, curr_role)) |_| {
-                                            return .{
-                                                .curr_id = curr_id_,
-                                                .point = .{ .recv_result_from_role = @backingInt(sender) },
-                                            };
-                                        } else {
-                                            switch (@typeInfo(State)) {
-                                                .@"union" => |U| {
-                                                    comptime std.debug.assert(U.field_names.len == 1);
-                                                    const NewState = U.field_types[0].State;
-                                                    const roles = comptime extern_targets(
-                                                        curr_role,
-                                                        NewState,
-                                                        internal_roles,
-                                                        extern_state,
-                                                    );
-                                                    const nid: u32 = @backingInt(idFromState(NewState));
-                                                    return .{ .curr_id = curr_id_, .point = .{
-                                                        .send_notify = .{
-                                                            .new_state_id = nid,
-                                                            .notify_roles = comptime ccc(roles),
-                                                        },
-                                                    } };
-                                                },
-                                                else => unreachable,
-                                            }
-                                        }
-                                    }
-                                },
-                            }
-                        },
-                    }
-                }
-            };
         }
 
         pub fn symmetric_run(
@@ -234,21 +100,21 @@ pub fn Runner(
                     } else if (comptime curr_role == sender) {
                         //The current role is the sender, which sends messages to all receivers.
                         const result = try State.process(ctx);
-                        inline for (receiver) |rvr| {
-                            try channels.send(curr_role, rvr, state_id, result);
+                        inline for (receiver) |recv_role| {
+                            try channels.send(curr_role, recv_role, state_id, result);
                         }
 
                         switch (result) {
-                            inline else => |new_fsm_state_wit| {
-                                const NewState = @TypeOf(new_fsm_state_wit).State;
-                                const roles = comptime extern_targets(
+                            inline else => |next| {
+                                const NewState = @TypeOf(next).State;
+                                const notify_roles = comptime extern_targets(
                                     curr_role,
                                     NewState,
                                     internal_roles,
                                     extern_state,
                                 );
-                                for (roles) |ro| {
-                                    try channels.send(curr_role, ro, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
+                                for (notify_roles) |target_role| {
+                                    try channels.send(curr_role, target_role, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
                                 }
                                 continue :sw comptime idFromState(NewState);
                             },
@@ -266,16 +132,16 @@ pub fn Runner(
                             }
 
                             switch (result) {
-                                inline else => |new_fsm_state_wit| {
-                                    const NewState = @TypeOf(new_fsm_state_wit).State;
-                                    const roles = comptime extern_targets(
+                                inline else => |next| {
+                                    const NewState = @TypeOf(next).State;
+                                    const notify_roles = comptime extern_targets(
                                         curr_role,
                                         NewState,
                                         internal_roles,
                                         extern_state,
                                     );
-                                    for (roles) |ro| {
-                                        try channels.send(curr_role, ro, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
+                                    for (notify_roles) |target_role| {
+                                        try channels.send(curr_role, target_role, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
                                     }
                                     continue :sw comptime idFromState(NewState);
                                 },
@@ -287,14 +153,14 @@ pub fn Runner(
                                     // However, it still needs to check whether to notify external roles.
                                     comptime std.debug.assert(U.field_names.len == 1);
                                     const NewState = U.field_types[0].State;
-                                    const roles = comptime extern_targets(
+                                    const notify_roles = comptime extern_targets(
                                         curr_role,
                                         NewState,
                                         internal_roles,
                                         extern_state,
                                     );
-                                    for (roles) |ro| {
-                                        try channels.send(curr_role, ro, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
+                                    for (notify_roles) |target_role| {
+                                        try channels.send(curr_role, target_role, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
                                     }
                                     continue :sw comptime idFromState(NewState);
                                 },
@@ -304,6 +170,144 @@ pub fn Runner(
                     }
                 },
             }
+        }
+
+        ///Builds a channel-free runner for one role: `run` decodes the
+        ///state the scheduler hands it, runs one step, and returns a plain-data
+        ///`Outcome` describing the messages that have to move.
+        pub fn RoleRunner(
+            comptime curr_role: Role,
+            comptime Codec: type,
+        ) type {
+            const Ctx = State_.info.Ctx(curr_role);
+            return struct {
+                pub fn run(
+                    context: *anyopaque,
+                    buffer: []u8,
+                    raw_state_id: u32,
+                    resume_from: Resume,
+                ) !Outcome {
+                    @setEvalBranchQuota(10_000_000);
+                    const curr_id: StateId = @fromBackingInt(@intCast(raw_state_id));
+                    const ctx: *Ctx = @ptrCast(@alignCast(context));
+                    switch (curr_id) {
+                        inline else => |state_id| {
+                            const State = StateFromId(state_id);
+                            if (comptime State == Exit) return .{
+                                .curr_id = raw_state_id,
+                                .action = .done,
+                            };
+
+                            const info = comptime State.info;
+                            const sender: Role = comptime info.sender;
+                            const receiver: []const Role = comptime info.receiver;
+                            const internal_roles = comptime @TypeOf(info).internal_roles;
+                            const extern_state = comptime @TypeOf(info).extern_state;
+
+                            switch (resume_from) {
+                                .continue_recv => |received| {
+                                    var reader = std.Io.Reader.fixed(received.payload);
+                                    const result = try Codec.decode(&reader, state_id, State);
+                                    const receiver_index = comptime std.mem.indexOfScalar(Role, receiver, curr_role) orelse 10000;
+                                    const fn_name = std.fmt.comptimePrint("preprocess_{d}", .{receiver_index});
+                                    if (@hasDecl(State, fn_name)) {
+                                        try @field(State, fn_name)(ctx, result);
+                                    }
+                                    switch (result) {
+                                        inline else => |next| {
+                                            const NewState = @TypeOf(next).State;
+                                            const notify_roles = comptime extern_targets(
+                                                curr_role,
+                                                NewState,
+                                                internal_roles,
+                                                extern_state,
+                                            );
+                                            const new_state_id: u32 = @backingInt(idFromState(NewState));
+                                            return .{ .curr_id = raw_state_id, .action = .{
+                                                .send_notify = .{
+                                                    .new_state_id = new_state_id,
+                                                    .notify_roles = comptime roleIds(notify_roles),
+                                                },
+                                            } };
+                                        },
+                                    }
+                                },
+                                .start => {
+                                    if (comptime std.mem.indexOfScalar(Role, internal_roles, curr_role) == null) {
+                                        return .{
+                                            .curr_id = raw_state_id,
+                                            .action = .{ .recv_notify_from_role = @backingInt(internal_roles[0]) },
+                                        };
+                                    } else if (comptime curr_role == sender) {
+                                        const result = try State.process(ctx);
+                                        var writer = std.Io.Writer.fixed(buffer);
+                                        try Codec.encode(&writer, state_id, result);
+                                        switch (result) {
+                                            inline else => |next| {
+                                                const NewState = @TypeOf(next).State;
+                                                const notify_roles = comptime extern_targets(
+                                                    curr_role,
+                                                    NewState,
+                                                    internal_roles,
+                                                    extern_state,
+                                                );
+                                                const new_state_id: u32 = @backingInt(idFromState(NewState));
+
+                                                return .{ .curr_id = raw_state_id, .action = .{
+                                                    .send_result = .{
+                                                        .result = writer.buffered(),
+                                                        .receiver_roles = comptime roleIds(receiver),
+                                                        .new_state_id = new_state_id,
+                                                        .notify_roles = comptime roleIds(notify_roles),
+                                                    },
+                                                } };
+                                            },
+                                        }
+                                    } else {
+                                        if (comptime std.mem.indexOfScalar(Role, receiver, curr_role)) |_| {
+                                            return .{
+                                                .curr_id = raw_state_id,
+                                                .action = .{ .recv_result_from_role = @backingInt(sender) },
+                                            };
+                                        } else {
+                                            switch (@typeInfo(State)) {
+                                                .@"union" => |U| {
+                                                    comptime std.debug.assert(U.field_names.len == 1);
+                                                    const NewState = U.field_types[0].State;
+                                                    const notify_roles = comptime extern_targets(
+                                                        curr_role,
+                                                        NewState,
+                                                        internal_roles,
+                                                        extern_state,
+                                                    );
+                                                    const new_state_id: u32 = @backingInt(idFromState(NewState));
+                                                    return .{ .curr_id = raw_state_id, .action = .{
+                                                        .send_notify = .{
+                                                            .new_state_id = new_state_id,
+                                                            .notify_roles = comptime roleIds(notify_roles),
+                                                        },
+                                                    } };
+                                                },
+                                                else => unreachable,
+                                            }
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            };
+        }
+
+        ///Encodes a list of roles as their backing integers, which is the form
+        ///the plain-data `Outcome` exposes to a scheduler.
+        pub fn roleIds(comptime roles: []const Role) []const u32 {
+            var ids: []const u32 = &.{};
+            inline for (roles) |role| {
+                ids = ids ++ &[_]u32{@backingInt(role)};
+            }
+            return ids;
         }
 
         fn extern_targets(
@@ -333,19 +337,20 @@ pub fn Runner(
     };
 }
 
-pub const Return = struct {
+///One step of a role's state machine, as seen by the scheduler: the state the
+///role was in, plus the messages it needs to send or receive next.
+pub const Outcome = struct {
     curr_id: u32,
-    point: union(enum) {
+    action: union(enum) {
         done: void,
-        recv_notify_from_role: u32, //from some role
+        recv_notify_from_role: u32,
         send_result: struct {
             result: []const u8,
             receiver_roles: []const u32,
             new_state_id: u32,
             notify_roles: []const u32,
         },
-        recv_result_from_role: u32, //from some role
-
+        recv_result_from_role: u32,
         send_notify: struct {
             new_state_id: u32,
             notify_roles: []const u32,
@@ -354,13 +359,16 @@ pub const Return = struct {
 
     pub fn format(self: @This(), w: *std.Io.Writer) !void {
         try w.print("\ncurr_id: {d}\n", .{self.curr_id});
-        try w.print("\npoint\n: {any}\n", .{self.point});
+        try w.print("\naction\n: {any}\n", .{self.action});
     }
 };
-pub const EnterPoint = union(enum) {
+
+///Where a role's runner should pick up: a fresh state, or an already received
+///payload that still needs decoding and preprocessing.
+pub const Resume = union(enum) {
     start: void,
     continue_recv: struct {
-        result_str: []const u8,
+        payload: []const u8,
     },
 };
 
@@ -370,32 +378,36 @@ pub const Key = struct {
     role: u32,
 };
 
-pub const RecvList = std.ArrayList(std.Deque([]u8)); // idx: role, val: [str, str, ...]
+///One queue per remote role; each element is an encoded message.
+pub const Inbox = std.ArrayList(std.Deque([]u8));
 
 pub const RoleContext = struct {
-    ctx: *anyopaque,
-    buff: []u8,
-    fun: *const fn (*anyopaque, []u8, u32, EnterPoint) anyerror!Return,
-    recv_list: RecvList,
+    context: *anyopaque,
+    buffer: []u8,
+    entry: *const fn (*anyopaque, []u8, u32, Resume) anyerror!Outcome,
+    inbox: Inbox,
 
-    pub fn run(self: @This(), curr_id_: u32, enter_point: EnterPoint) !Return {
-        return try self.fun(self.ctx, self.buff, curr_id_, enter_point);
+    pub fn run(self: @This(), raw_state_id: u32, resume_from: Resume) !Outcome {
+        return try self.entry(self.context, self.buffer, raw_state_id, resume_from);
     }
 };
 
 pub const Action = struct {
     key: Key,
-    curr_id_: u32,
-    enter_point: EnterPoint,
+    state_id: u32,
+    resume_from: Resume,
 };
 
 pub const ProtocolMap = std.AutoHashMap(Key, RoleContext);
+
+///Cooperative scheduler: queues one `Action` per role and drains the queue,
+///routing encoded messages between role inboxes.
 pub const RunContext = struct {
-    pmap: ProtocolMap,
+    protocols: ProtocolMap,
     actions: std.Deque(Action),
 
     pub fn init(self: *@This(), gpa: std.mem.Allocator) void {
-        self.pmap = .init(gpa);
+        self.protocols = .init(gpa);
         self.actions = .empty;
     }
 
@@ -404,129 +416,130 @@ pub const RunContext = struct {
         gpa: std.mem.Allocator,
         pid: u32,
         buff_size: usize,
+        Codec: type,
         ctx: anytype,
         EnterState: type,
     ) !void {
-        const PRunner = Runner(EnterState);
-        const curr_id = PRunner.idFromState(EnterState);
-        const Role: type = PRunner.Role;
+        const ProtocolRunner = Runner(EnterState);
+        const start_id = ProtocolRunner.idFromState(EnterState);
+        const Role: type = ProtocolRunner.Role;
         const len = @typeInfo(Role).@"enum".field_names.len;
         inline for (@typeInfo(Role).@"enum".field_names, 0..) |name, idx| {
-            const RR = PRunner.MakeRunner(@fromBackingInt(idx), Codec_);
-            var rc: RoleContext = .{
-                .ctx = &@field(ctx, name),
-                .buff = try gpa.alloc(u8, buff_size),
-                .fun = &RR.symmetric_run,
-                .recv_list = try .initCapacity(gpa, len),
+            const RoleRun = ProtocolRunner.RoleRunner(@fromBackingInt(idx), Codec);
+            var role_ctx: RoleContext = .{
+                .context = &@field(ctx, name),
+                .buffer = try gpa.alloc(u8, buff_size),
+                .entry = &RoleRun.run,
+                .inbox = try .initCapacity(gpa, len),
             };
             for (0..len) |_| {
-                rc.recv_list.appendAssumeCapacity(.empty);
+                role_ctx.inbox.appendAssumeCapacity(.empty);
             }
             const key: Key = .{ .pid = pid, .role = @intCast(idx) };
-            try self.pmap.put(key, rc);
-            const start_id: u32 = @backingInt(curr_id);
+            try self.protocols.put(key, role_ctx);
+            const raw_start_id: u32 = @backingInt(start_id);
             try self.actions.pushBack(gpa, .{
                 .key = key,
-                .curr_id_ = start_id,
-                .enter_point = .start,
+                .state_id = raw_start_id,
+                .resume_from = .start,
             });
         }
     }
 
     pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
-        var iter = self.pmap.valueIterator();
-        while (iter.next()) |val| {
-            gpa.free(val.buff);
-            for (val.recv_list.items) |*rcv| {
-                rcv.deinit(gpa);
+        var iter = self.protocols.valueIterator();
+        while (iter.next()) |role_ctx| {
+            gpa.free(role_ctx.buffer);
+            for (role_ctx.inbox.items) |*queue| {
+                queue.deinit(gpa);
             }
-            val.recv_list.deinit(gpa);
+            role_ctx.inbox.deinit(gpa);
         }
-        self.pmap.deinit();
+        self.protocols.deinit();
         self.actions.deinit(gpa);
     }
 
-    pub fn run(self: *@This(), gpa: std.mem.Allocator) !void {
+    pub fn run(self: *@This(), gpa: std.mem.Allocator, Codec: type) !void {
         while (self.actions.popFront()) |action| {
             const key = action.key;
             const pid = key.pid;
             const curr_role = key.role;
-            const rc = self.pmap.getPtr(action.key).?;
-            const rt = try rc.run(action.curr_id_, action.enter_point);
-            const curr_id = rt.curr_id;
-            switch (rt.point) {
+            const role_ctx = self.protocols.getPtr(action.key).?;
+            const outcome = try role_ctx.run(action.state_id, action.resume_from);
+            const curr_id = outcome.curr_id;
+            switch (outcome.action) {
                 .done => {},
                 .recv_notify_from_role => |role| {
-                    if (rc.recv_list.items[@intCast(role)].popFront()) |msg| {
-                        defer gpa.free(msg);
-                        var reader = std.Io.Reader.fixed(msg);
-                        const n = try Codec_.decode(&reader, curr_id, Notify);
+                    if (role_ctx.inbox.items[@intCast(role)].popFront()) |message| {
+                        defer gpa.free(message);
+                        var reader = std.Io.Reader.fixed(message);
+                        const notify = try Codec.decode(&reader, curr_id, Notify);
                         try self.actions.pushBack(gpa, .{
                             .key = key,
-                            .curr_id_ = n.polyrole_notify,
-                            .enter_point = .start,
+                            .state_id = notify.polyrole_notify,
+                            .resume_from = .start,
                         });
                     } else {
                         try self.actions.pushBack(gpa, action);
                     }
                 },
                 .recv_result_from_role => |role| {
-                    if (rc.recv_list.items[@intCast(role)].popFront()) |msg| {
-                        defer gpa.free(msg);
-                        @memcpy(rc.buff[0..msg.len], msg);
+                    if (role_ctx.inbox.items[@intCast(role)].popFront()) |message| {
+                        defer gpa.free(message);
+                        @memcpy(role_ctx.buffer[0..message.len], message);
                         try self.actions.pushBack(gpa, .{
                             .key = key,
-                            .curr_id_ = curr_id,
-                            .enter_point = .{ .continue_recv = .{
-                                .result_str = rc.buff[0..msg.len],
+                            .state_id = curr_id,
+                            .resume_from = .{ .continue_recv = .{
+                                .payload = role_ctx.buffer[0..message.len],
                             } },
                         });
                     } else {
                         try self.actions.pushBack(gpa, action);
                     }
                 },
-                .send_notify => |val| {
-                    for (val.notify_roles) |other_role| {
-                        const other_rc = self.pmap.getPtr(.{ .pid = pid, .role = other_role }).?;
+                .send_notify => |send| {
+                    for (send.notify_roles) |target_role| {
+                        const target_ctx = self.protocols.getPtr(.{ .pid = pid, .role = target_role }).?;
                         var allocating = std.Io.Writer.Allocating.init(gpa);
                         defer allocating.deinit();
                         const writer = &allocating.writer;
-                        try Codec_.encode(writer, curr_id, Notify{
-                            .polyrole_notify = val.new_state_id,
+                        try Codec.encode(writer, curr_id, Notify{
+                            .polyrole_notify = send.new_state_id,
                         });
-                        try other_rc.recv_list.items[@intCast(curr_role)].pushBack(
+                        try target_ctx.inbox.items[@intCast(curr_role)].pushBack(
                             gpa,
                             try gpa.dupe(u8, writer.buffered()),
                         );
                     }
                     try self.actions.pushBack(gpa, .{
                         .key = action.key,
-                        .curr_id_ = val.new_state_id,
-                        .enter_point = .start,
+                        .state_id = send.new_state_id,
+                        .resume_from = .start,
                     });
                 },
-                .send_result => |val| {
-                    for (val.receiver_roles) |recv_role| {
-                        const recv_rc = self.pmap.getPtr(.{ .pid = pid, .role = recv_role }).?;
-                        try recv_rc.recv_list.items[@intCast(curr_role)].pushBack(gpa, try gpa.dupe(u8, val.result));
+                .send_result => |send| {
+                    for (send.receiver_roles) |receiver| {
+                        const receiver_ctx = self.protocols.getPtr(.{ .pid = pid, .role = receiver }).?;
+                        try receiver_ctx.inbox.items[@intCast(curr_role)].pushBack(gpa, try gpa.dupe(u8, send.result));
                     }
-                    for (val.notify_roles) |other_role| {
-                        const other_rc = self.pmap.getPtr(.{ .pid = pid, .role = other_role }).?;
+                    for (send.notify_roles) |target_role| {
+                        const target_ctx = self.protocols.getPtr(.{ .pid = pid, .role = target_role }).?;
                         var allocating = std.Io.Writer.Allocating.init(gpa);
                         defer allocating.deinit();
                         const writer = &allocating.writer;
-                        try Codec_.encode(writer, curr_id, Notify{
-                            .polyrole_notify = val.new_state_id,
+                        try Codec.encode(writer, curr_id, Notify{
+                            .polyrole_notify = send.new_state_id,
                         });
-                        try other_rc.recv_list.items[@intCast(curr_role)].pushBack(
+                        try target_ctx.inbox.items[@intCast(curr_role)].pushBack(
                             gpa,
                             try gpa.dupe(u8, writer.buffered()),
                         );
                     }
                     try self.actions.pushBack(gpa, .{
                         .key = action.key,
-                        .curr_id_ = val.new_state_id,
-                        .enter_point = .start,
+                        .state_id = send.new_state_id,
+                        .resume_from = .start,
                     });
                 },
             }
@@ -534,56 +547,58 @@ pub const RunContext = struct {
     }
 };
 
-//example
-const PingPong = enum { a, b };
-const PingPongContext = struct { a: u32, b: void };
+test "RoleRunner" {
+    const Prot = struct {
 
-fn pingpogn_info(
-    StateName: []const u8,
-    sender: PingPong,
-    receiver: []const PingPong,
-) root.ProtocolInfo(
-    "pingpong",
-    PingPong,
-    PingPongContext,
-    &.{ .a, .b },
-    &.{root.Exit},
-) {
-    return .{
-        .name = StateName,
-        .sender = sender,
-        .receiver = receiver,
-    };
-}
+        //example
+        const PingPong = enum { a, b };
+        const Context = struct { a: u32, b: void };
 
-const Ping = union(enum) {
-    ping: Data(void, Pong),
-    next: Data(void, root.Exit),
-
-    pub const info = pingpogn_info("Ping", .a, &.{.b});
-
-    pub fn process(ctx: *info.Ctx(.a)) !@This() {
-        std.debug.print("val: {d}\n", .{ctx.*});
-        if (ctx.* >= 10) {
-            return .{ .next = .{ .data = {} } };
+        fn pingpong_info(
+            StateName: []const u8,
+            sender: PingPong,
+            receiver: []const PingPong,
+        ) root.ProtocolInfo(
+            "pingpong",
+            PingPong,
+            Context,
+            &.{ .a, .b },
+            &.{root.Exit},
+        ) {
+            return .{
+                .name = StateName,
+                .sender = sender,
+                .receiver = receiver,
+            };
         }
-        ctx.* += 1;
-        return .{ .ping = .{ .data = {} } };
-    }
-};
-const Pong = union(enum) {
-    pong: Data(void, Ping),
 
-    pub const info = pingpogn_info("Ping", .b, &.{.a});
+        const Ping = union(enum) {
+            ping: Data(void, Pong),
+            next: Data(void, root.Exit),
 
-    pub fn process(_: *info.Ctx(.b)) !@This() {
-        return .pong;
-    }
-};
+            pub const info = pingpong_info("Ping", .a, &.{.b});
 
-test "MakeRunner" {
-    var ctx: PingPongContext = .{ .a = 0, .b = {} };
-    var ctx1: PingPongContext = .{ .a = 0, .b = {} };
+            pub fn process(ctx: *info.Ctx(.a)) !@This() {
+                if (ctx.* >= 10) {
+                    return .{ .next = .{ .data = {} } };
+                }
+                ctx.* += 1;
+                return .{ .ping = .{ .data = {} } };
+            }
+        };
+        const Pong = union(enum) {
+            pong: Data(void, Ping),
+
+            pub const info = pingpong_info("Ping", .b, &.{.a});
+
+            pub fn process(_: *info.Ctx(.b)) !@This() {
+                return .pong;
+            }
+        };
+    };
+
+    var ctx: Prot.Context = .{ .a = 0, .b = {} };
+    var ctx1: Prot.Context = .{ .a = 0, .b = {} };
     const testing = std.testing;
     const allocator = testing.allocator;
 
@@ -591,8 +606,12 @@ test "MakeRunner" {
     run_context.init(allocator);
     defer run_context.deinit(allocator);
 
-    try run_context.append_protocol(allocator, 0, 100, &ctx, Ping);
-    try run_context.append_protocol(allocator, 1, 100, &ctx1, Ping);
+    const Codec = @import("Codec.zig");
+    try run_context.append_protocol(allocator, 0, 100, Codec, &ctx, Prot.Ping);
+    try run_context.append_protocol(allocator, 1, 100, Codec, &ctx1, Prot.Ping);
 
-    try run_context.run(allocator);
+    try run_context.run(allocator, Codec);
+
+    try testing.expectEqual(ctx.a, 10);
+    try testing.expectEqual(ctx1.a, 10);
 }

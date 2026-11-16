@@ -6,12 +6,20 @@ const pingpong = @import("./protocols/pingpong.zig");
 const mk2pc = @import("./protocols/two_phase_commit.zig").mk2pc;
 const channel = @import("channel.zig");
 const runner = polyrole.runner;
+const Codec = polyrole.Codec;
 
 const MvarChannelMap = channel.MvarChannelMap(AllRole);
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     var ctx: Context = .{
+        .alice = .{},
+        .bob = .{},
+        .charlie = .{},
+        .selector = .{},
+    };
+
+    var ctx1: Context = .{
         .alice = .{},
         .bob = .{},
         .charlie = .{},
@@ -25,11 +33,21 @@ pub fn main(init: std.process.Init) !void {
         allocator,
         0,
         100,
+        Codec,
         &ctx,
         EnterFsmState,
     );
 
-    try run_context.run(allocator);
+    try run_context.append_protocol(
+        allocator,
+        1,
+        100,
+        Codec,
+        &ctx1,
+        EnterFsmState,
+    );
+
+    try run_context.run(allocator, Codec);
 }
 
 //

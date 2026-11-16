@@ -1,8 +1,9 @@
 const std = @import("std");
-const Codec = @import("Codec.zig");
-const Notify = @import("polyrole").Notify;
+const polyrole = @import("polyrole");
+const Notify = polyrole.Notify;
 const net = std.net;
 const Io = std.Io;
+const Codec = polyrole.Codec;
 
 //stream channel
 
