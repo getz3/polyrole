@@ -5,7 +5,6 @@ const Data = polyrole.Data;
 const pingpong = @import("./protocols/pingpong.zig");
 const mk2pc = @import("./protocols/two_phase_commit.zig").mk2pc;
 const channel = @import("channel.zig");
-const runner = polyrole.runner;
 const Codec = polyrole.Codec;
 
 const MvarChannelMap = channel.MvarChannelMap(AllRole);
@@ -26,7 +25,7 @@ pub fn main(init: std.process.Init) !void {
         .selector = .{},
     };
 
-    var scheduler: runner.PrototypeScheduler = undefined;
+    var scheduler: polyrole.scheduler.PrototypeScheduler = undefined;
     scheduler.init(allocator);
     defer scheduler.deinit(allocator);
     try scheduler.append_protocol(

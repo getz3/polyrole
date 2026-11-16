@@ -3,6 +3,7 @@ const meta = std.meta;
 pub const Graph = @import("Graph.zig");
 pub const runner = @import("runner.zig");
 pub const Runner = runner.Runner;
+pub const scheduler = @import("scheduler.zig");
 pub const Codec = @import("Codec.zig");
 
 //The Exit status is unique.
@@ -291,5 +292,5 @@ pub const StateMap = struct {
 };
 
 test "all" {
-    _ = @import("runner.zig");
+    _ = @import("scheduler.zig");
 }
