@@ -3,6 +3,7 @@ const meta = std.meta;
 pub const Graph = @import("Graph.zig");
 pub const runner = @import("runner.zig");
 pub const Runner = runner.Runner;
+pub const Codec = @import("Codec.zig");
 
 //The Exit status is unique.
 pub const Exit = union(enum) {

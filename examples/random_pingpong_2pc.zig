@@ -5,64 +5,98 @@ const Data = polyrole.Data;
 const pingpong = @import("./protocols/pingpong.zig");
 const mk2pc = @import("./protocols/two_phase_commit.zig").mk2pc;
 const channel = @import("channel.zig");
+const runner = polyrole.runner;
 
 const MvarChannelMap = channel.MvarChannelMap(AllRole);
 
 pub fn main(init: std.process.Init) !void {
-    const io = init.io;
-    const gpa = init.gpa;
-
-    var counter: std.atomic.Value(usize) = .init(0);
-
-    var mvar_channel_map: MvarChannelMap = .init(io, true, &counter);
-    defer mvar_channel_map.deinit(gpa);
-
-    try mvar_channel_map.generate_all_MvarChannel(gpa, 10);
-
-    const alice = struct {
-        fn run(io_: Io, mcm: *MvarChannelMap) !void {
-            var alice_context: AliceContext = .{};
-            io_.random(@ptrCast(&alice_context.xoshiro256.s));
-            try Runner.symmetric_run(.alice, &alice_context, mcm, curr_id);
-        }
+    const allocator = init.gpa;
+    var ctx: Context = .{
+        .alice = .{},
+        .bob = .{},
+        .charlie = .{},
+        .selector = .{},
     };
 
-    const bob = struct {
-        fn run(io_: Io, mcm: *MvarChannelMap) !void {
-            var bob_context: BobContext = .{};
-            io_.random(@ptrCast(&bob_context.xoshiro256.s));
+    var run_context: runner.RunContext = .{
+        .pmap = .init(allocator),
+        .actions = .empty,
+    };
+    defer run_context.deinit(allocator);
 
-            try Runner.symmetric_run(.bob, &bob_context, mcm, curr_id);
-        }
+    const Rpp2pc = runner.Runner(EnterFsmState);
+    const Codec = polyrole.Codec;
+
+    const AliceR = Rpp2pc.MakeRunner(.alice, Codec);
+    const BobR = Rpp2pc.MakeRunner(.bob, Codec);
+    const CharlieR = Rpp2pc.MakeRunner(.charlie, Codec);
+    const SelectorR = Rpp2pc.MakeRunner(.selector, Codec);
+
+    var buff_alice: [100]u8 = undefined;
+    const rc_alice: runner.RoleContext = .{
+        .ctx = &ctx.alice,
+        .buff = &buff_alice,
+        .fun = &AliceR.symmetric_run,
     };
 
-    const charlie = struct {
-        fn run(io_: Io, mcm: *MvarChannelMap) !void {
-            var charlie_context: CharlieContext = .{};
-            io_.random(@ptrCast(&charlie_context.xoshiro256.s));
-
-            try Runner.symmetric_run(.charlie, &charlie_context, mcm, curr_id);
-        }
+    var buff_bob: [100]u8 = undefined;
+    const rc_bob: runner.RoleContext = .{
+        .ctx = &ctx.bob,
+        .buff = &buff_bob,
+        .fun = &BobR.symmetric_run,
     };
 
-    const selector = struct {
-        fn run(io_: Io, mcm: *MvarChannelMap) !void {
-            var select_context: SelectorContext = .{};
-            io_.random(@ptrCast(&select_context.xoshiro256.s));
-
-            try Runner.symmetric_run(.selector, &select_context, mcm, curr_id);
-        }
+    var buff_charlie: [100]u8 = undefined;
+    const rc_charlie: runner.RoleContext = .{
+        .ctx = &ctx.charlie,
+        .buff = &buff_charlie,
+        .fun = &CharlieR.symmetric_run,
     };
 
-    var alice_future = try io.concurrent(alice.run, .{ io, &mvar_channel_map });
-    var bob_future = try io.concurrent(bob.run, .{ io, &mvar_channel_map });
-    var charlie_future = try io.concurrent(charlie.run, .{ io, &mvar_channel_map });
-    var selector_future = try io.concurrent(selector.run, .{ io, &mvar_channel_map });
+    var buff_selector: [100]u8 = undefined;
+    const rc_selector: runner.RoleContext = .{
+        .ctx = &ctx.selector,
+        .buff = &buff_selector,
+        .fun = &SelectorR.symmetric_run,
+    };
 
-    try alice_future.await(io);
-    try bob_future.await(io);
-    try charlie_future.await(io);
-    try selector_future.await(io);
+    const key_alice: runner.Key = .{ .pid = 0, .role = @backingInt(AllRole.alice) };
+    const key_bob: runner.Key = .{ .pid = 0, .role = @backingInt(AllRole.bob) };
+    const key_charlie: runner.Key = .{ .pid = 0, .role = @backingInt(AllRole.charlie) };
+    const key_selector: runner.Key = .{ .pid = 0, .role = @backingInt(AllRole.selector) };
+
+    try run_context.pmap.put(key_alice, rc_alice);
+    try run_context.pmap.put(key_bob, rc_bob);
+    try run_context.pmap.put(key_charlie, rc_charlie);
+    try run_context.pmap.put(key_selector, rc_selector);
+
+    const start_id: u32 = @backingInt(curr_id);
+
+    try run_context.actions.pushBack(allocator, .{
+        .key = key_alice,
+        .curr_id_ = start_id,
+        .enter_point = .start,
+    });
+
+    try run_context.actions.pushBack(allocator, .{
+        .key = key_bob,
+        .curr_id_ = start_id,
+        .enter_point = .start,
+    });
+
+    try run_context.actions.pushBack(allocator, .{
+        .key = key_charlie,
+        .curr_id_ = start_id,
+        .enter_point = .start,
+    });
+
+    try run_context.actions.pushBack(allocator, .{
+        .key = key_selector,
+        .curr_id_ = start_id,
+        .enter_point = .start,
+    });
+
+    try run_context.run(allocator);
 }
 
 //

@@ -4,7 +4,7 @@ const builtin = @import("builtin");
 const native_endian = builtin.target.cpu.arch.endian();
 
 pub fn encode(writer: *std.Io.Writer, state_id: anytype, val: anytype) !void {
-    const id: u32 = @backingInt(state_id);
+    const id: u32 = if (@TypeOf(state_id) == u32) state_id else @backingInt(state_id);
     try writer.writeInt(u32, id, native_endian);
     if (@TypeOf(val) == Notify) {
         try writer.writeInt(u32, val.polyrole_notify, native_endian);
@@ -32,7 +32,7 @@ pub fn TagPayloadByName(comptime U: type, comptime tag_name: []const u8) type {
 }
 
 pub fn decode(reader: *std.Io.Reader, state_id: anytype, T: type) !T {
-    const id: u32 = @backingInt(state_id);
+    const id: u32 = if (@TypeOf(state_id) == u32) state_id else @backingInt(state_id);
     const rid = try reader.takeInt(u32, native_endian);
     if (id != rid and T != Notify) {
         std.debug.print("id: {d}, rid: {d}\n", .{ id, rid });

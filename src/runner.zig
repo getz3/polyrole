@@ -185,9 +185,9 @@ pub fn Runner(
                                                     );
                                                     const nid: u32 = @backingInt(idFromState(NewState));
                                                     return .{ .curr_id = curr_id_, .point = .{
-                                                        .send_result = .{
+                                                        .send_notify = .{
                                                             .new_state_id = nid,
-                                                            .notify_roles = roles,
+                                                            .notify_roles = comptime ccc(roles),
                                                         },
                                                     } };
                                                 },
@@ -363,37 +363,44 @@ pub const EnterPoint = union(enum) {
     },
 };
 
-const ProtocolId = u32;
-const Key = struct {
+pub const ProtocolId = u32;
+pub const Key = struct {
     pid: ProtocolId,
     role: u32,
 };
 
-const RecvList = std.ArrayList(std.Deque([]u8)); // idx: role, val: [str, str, ...]
+pub const RecvList = [4](std.Deque([]u8)); // idx: role, val: [str, str, ...]
 
-const RoleContext = struct {
+pub const RoleContext = struct {
     ctx: *anyopaque,
     buff: []u8,
     fun: *const fn (*anyopaque, []u8, u32, EnterPoint) anyerror!Return,
-    recv_list: RecvList,
+    recv_list: RecvList = .{ .empty, .empty, .empty, .empty },
 
     pub fn run(self: @This(), curr_id_: u32, enter_point: EnterPoint) !Return {
         return try self.fun(self.ctx, self.buff, curr_id_, enter_point);
     }
 };
 
-const Action = struct {
+pub const Action = struct {
     key: Key,
     curr_id_: u32,
     enter_point: EnterPoint,
 };
 
-const ProtocolMap = std.AutoHashMap(Key, RoleContext);
-const RunContext = struct {
+pub const ProtocolMap = std.AutoHashMap(Key, RoleContext);
+pub const RunContext = struct {
     pmap: ProtocolMap,
     actions: std.Deque(Action),
 
     pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+        var iter = self.pmap.valueIterator();
+        while (iter.next()) |val| {
+            val.recv_list[0].deinit(gpa);
+            val.recv_list[1].deinit(gpa);
+            val.recv_list[2].deinit(gpa);
+            val.recv_list[3].deinit(gpa);
+        }
         self.pmap.deinit();
         self.actions.deinit(gpa);
     }
@@ -401,18 +408,21 @@ const RunContext = struct {
     const Codec = @import("Codec.zig");
     pub fn run(self: *@This(), gpa: std.mem.Allocator) !void {
         while (self.actions.popFront()) |action| {
-            const pid = action.key.pid;
-            const curr_role = action.key.role;
-            const rc = self.pmap.get(action.key).?;
+            const key = action.key;
+            const pid = key.pid;
+            const curr_role = key.role;
+            const rc = self.pmap.getPtr(action.key).?;
             const rt = try rc.run(action.curr_id_, action.enter_point);
             const curr_id = rt.curr_id;
             switch (rt.point) {
                 .done => {},
                 .recv_notify_from_role => |role| {
-                    if (rc.recv_list.items[@intCast(role)].popFront()) |msg| {
+                    if (rc.recv_list[@intCast(role)].popFront()) |msg| {
+                        defer gpa.free(msg);
                         var reader = std.Io.Reader.fixed(msg);
                         const n = try Codec.decode(&reader, curr_id, Notify);
                         try self.actions.pushBack(gpa, .{
+                            .key = key,
                             .curr_id_ = n.polyrole_notify,
                             .enter_point = .start,
                         });
@@ -421,11 +431,14 @@ const RunContext = struct {
                     }
                 },
                 .recv_result_from_role => |role| {
-                    if (rc.recv_list.items[@intCast(role)].popFront()) |msg| {
+                    if (rc.recv_list[@intCast(role)].popFront()) |msg| {
+                        defer gpa.free(msg);
+                        @memcpy(rc.buff[0..msg.len], msg);
                         try self.actions.pushBack(gpa, .{
+                            .key = key,
                             .curr_id_ = curr_id,
                             .enter_point = .{ .continue_recv = .{
-                                .result_str = try gpa.dupe(u8, msg),
+                                .result_str = rc.buff[0..msg.len],
                             } },
                         });
                     } else {
@@ -435,11 +448,16 @@ const RunContext = struct {
                 .send_notify => |val| {
                     for (val.notify_roles) |other_role| {
                         const other_rc = self.pmap.getPtr(.{ .pid = pid, .role = other_role }).?;
-                        var writer = std.Io.Writer.Allocating.init(gpa);
-                        try Codec.encode(&writer, curr_id, Notify{
+                        var allocating = std.Io.Writer.Allocating.init(gpa);
+                        defer allocating.deinit();
+                        const writer = &allocating.writer;
+                        try Codec.encode(writer, curr_id, Notify{
                             .polyrole_notify = val.new_state_id,
                         });
-                        try other_rc.recv_list.items[@intCast(curr_role)].pushBack(gpa, try gpa.dupe(u8, writer.written()));
+                        try other_rc.recv_list[@intCast(curr_role)].pushBack(
+                            gpa,
+                            try gpa.dupe(u8, writer.buffered()),
+                        );
                     }
                     try self.actions.pushBack(gpa, .{
                         .key = action.key,
@@ -450,15 +468,20 @@ const RunContext = struct {
                 .send_result => |val| {
                     for (val.receiver_roles) |recv_role| {
                         const recv_rc = self.pmap.getPtr(.{ .pid = pid, .role = recv_role }).?;
-                        try recv_rc.recv_list.items[@intCast(curr_role)].pushBack(gpa, try gpa.dupe(u8, val.result));
+                        try recv_rc.recv_list[@intCast(curr_role)].pushBack(gpa, try gpa.dupe(u8, val.result));
                     }
                     for (val.notify_roles) |other_role| {
                         const other_rc = self.pmap.getPtr(.{ .pid = pid, .role = other_role }).?;
-                        var writer = std.Io.Writer.Allocating.init(gpa);
-                        try Codec.encode(&writer, curr_id, Notify{
+                        var allocating = std.Io.Writer.Allocating.init(gpa);
+                        defer allocating.deinit();
+                        const writer = &allocating.writer;
+                        try Codec.encode(writer, curr_id, Notify{
                             .polyrole_notify = val.new_state_id,
                         });
-                        try other_rc.recv_list.items[@intCast(curr_role)].pushBack(gpa, try gpa.dupe(u8, writer.written()));
+                        try other_rc.recv_list[@intCast(curr_role)].pushBack(
+                            gpa,
+                            try gpa.dupe(u8, writer.buffered()),
+                        );
                     }
                     try self.actions.pushBack(gpa, .{
                         .key = action.key,
@@ -501,7 +524,7 @@ const Ping = union(enum) {
 
     pub fn process(ctx: *info.Ctx(.a)) !@This() {
         std.debug.print("val: {d}\n", .{ctx.*});
-        if (ctx.* >= 0) {
+        if (ctx.* >= 10) {
             return .{ .next = .{ .data = {} } };
         }
         ctx.* += 1;
@@ -514,6 +537,7 @@ const Pong = union(enum) {
     pub const info = pingpogn_info("Ping", .b, &.{.a});
 
     pub fn process(_: *info.Ctx(.b)) !@This() {
+        // std.debug.print("------------nice\n", .{});
         return .pong;
     }
 };
@@ -523,8 +547,11 @@ test "MakeRunner" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    var pmap: ProtocolMap = .init(allocator);
-    defer pmap.deinit();
+    var run_context: RunContext = .{
+        .pmap = .init(allocator),
+        .actions = .empty,
+    };
+    defer run_context.deinit(allocator);
 
     const PingPongRunner = Runner(Ping);
 
@@ -538,7 +565,6 @@ test "MakeRunner" {
         .ctx = &ctx.a,
         .buff = &buff_a,
         .fun = &ASuspendRunner.symmetric_run,
-        .recv_list = .empty,
     };
 
     var buff_b: [100]u8 = undefined;
@@ -546,31 +572,28 @@ test "MakeRunner" {
         .ctx = &ctx.b,
         .buff = &buff_b,
         .fun = &BSuspendRunner.symmetric_run,
-        .recv_list = .empty,
     };
 
-    try pmap.put(.{ .pid = 0, .role = @backingInt(PingPong.a) }, rc_a);
-    try pmap.put(.{ .pid = 0, .role = @backingInt(PingPong.b) }, rc_b);
+    // run_context.
+    const key_a: Key = .{ .pid = 0, .role = @backingInt(PingPong.a) };
+    const key_b: Key = .{ .pid = 0, .role = @backingInt(PingPong.b) };
 
-    const result = try rc_a.run(
-        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
-        .start,
-    );
+    try run_context.pmap.put(key_a, rc_a);
+    try run_context.pmap.put(key_b, rc_b);
 
-    const result1 = try rc_b.run(
-        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
-        .start,
-    );
-    //
-    const result2 = try rc_b.run(
-        @intCast(@backingInt(PingPongRunner.idFromState(Ping))),
-        .{ .continue_recv = .{ .result_str = result.point.send_result.result } },
-    );
+    const start_id: u32 = @backingInt(PingPongRunner.idFromState(Ping));
 
-    std.debug.print("a, result: {f}\n", .{result});
-    std.debug.print("b, result: {f}\n", .{result1});
-    std.debug.print("b, result: {f}\n", .{result2});
+    try run_context.actions.pushBack(allocator, .{
+        .key = key_a,
+        .curr_id_ = start_id,
+        .enter_point = .start,
+    });
 
-    std.debug.print("fun ptr: {any}\n", .{&ASuspendRunner.symmetric_run});
-    std.debug.print("fun ptr: {any}\n", .{&BSuspendRunner.symmetric_run});
+    try run_context.actions.pushBack(allocator, .{
+        .key = key_b,
+        .curr_id_ = start_id,
+        .enter_point = .start,
+    });
+
+    try run_context.run(allocator);
 }
