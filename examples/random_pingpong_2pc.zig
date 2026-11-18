@@ -25,7 +25,7 @@ pub fn main(init: std.process.Init) !void {
         .selector = .{},
     };
 
-    var scheduler: polyrole.scheduler.PrototypeScheduler = undefined;
+    var scheduler: polyrole.scheduler.Prototype = undefined;
     scheduler.init(allocator);
     defer scheduler.deinit(allocator);
     try scheduler.append_protocol(

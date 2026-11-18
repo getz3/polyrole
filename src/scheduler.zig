@@ -19,7 +19,7 @@ pub const Intersection = struct {
 ///role and drains the queue, routing encoded messages between role inboxes.
 ///It validates that the single-step runner drives a protocol correctly; it is
 ///not meant to be the production driver.
-pub const PrototypeScheduler = struct {
+pub const Prototype = struct {
     protocols: ProtocolMap,
     actions: std.Deque(Action),
 
@@ -240,7 +240,7 @@ test "RoleRunner" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    var scheduler: PrototypeScheduler = undefined;
+    var scheduler: Prototype = undefined;
     scheduler.init(allocator);
     defer scheduler.deinit(allocator);
 
