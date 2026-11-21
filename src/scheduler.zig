@@ -68,7 +68,7 @@ pub const Prototype = struct {
             var role_ctx: RoleContext = .{
                 .context = &@field(ctx, name),
                 .buffer = try gpa.alloc(u8, buff_size),
-                .entry = &RoleRun.run,
+                .entry = &RoleRun.run_,
                 .inbox = try .initCapacity(gpa, len),
             };
             for (0..len) |_| {

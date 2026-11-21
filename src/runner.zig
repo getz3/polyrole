@@ -180,15 +180,24 @@ pub fn Runner(
         ) type {
             const Ctx = State_.info.Ctx(curr_role);
             return struct {
-                pub fn run(
+                pub fn run_(
                     context: *anyopaque,
+                    buffer: []u8,
+                    raw_state_id: u32,
+                    resume_from: Resume,
+                ) !Outcome {
+                    const ctx: *Ctx = @ptrCast(@alignCast(context));
+                    return run(ctx, buffer, raw_state_id, resume_from);
+                }
+
+                pub fn run(
+                    ctx: *Ctx,
                     buffer: []u8,
                     raw_state_id: u32,
                     resume_from: Resume,
                 ) !Outcome {
                     @setEvalBranchQuota(10_000_000);
                     const curr_id: StateId = @fromBackingInt(@intCast(raw_state_id));
-                    const ctx: *Ctx = @ptrCast(@alignCast(context));
                     switch (curr_id) {
                         inline else => |state_id| {
                             const State = StateFromId(state_id);
