@@ -202,45 +202,44 @@ fn reachableStatesDepthFirstSearch(
                     ));
                 }
             }
-        }
 
-        switch (@typeInfo(CurrentState)) {
-            .@"union" => |un| {
-                for (un.field_types) |ty| {
-                    const NextState = ty.State;
+            switch (@typeInfo(CurrentState)) {
+                .@"union" => |un| {
+                    for (un.field_types) |ty| {
+                        const NextState = ty.State;
 
-                    if (!states_set.has(NextState)) {
-                        // Validate that the handler context type matches (skip for special states like Exit)
-                        if (NextState != Exit) {
-                            const Info = @TypeOf(NextState.info);
-                            const NextContext = Info.Context;
-                            const Role = Info.Role;
-                            const is_equal: bool = blk: {
-                                for (@typeInfo(Role).@"enum".field_names) |name| {
-                                    if (@FieldType(NextContext, name) != @FieldType(ExpectedContext, name)) {
-                                        break :blk false;
+                        if (!states_set.has(NextState)) {
+                            // Validate that the handler context type matches (skip for special states like Exit)
+                            if (NextState != Exit) {
+                                const NextInfo = @TypeOf(NextState.info);
+                                const NextContext = NextInfo.Context;
+                                const is_equal: bool = blk: {
+                                    for (@typeInfo(Role).@"enum".field_names) |name| {
+                                        if (@FieldType(NextContext, name) != @FieldType(ExpectedContext, name)) {
+                                            break :blk false;
+                                        }
                                     }
+                                    break :blk true;
+                                };
+                                if (!is_equal) {
+                                    @compileError(std.fmt.comptimePrint(
+                                        "Context type mismatch: State {any}\nhas context type {any}\nbut expected {any}",
+                                        .{ NextState, NextContext, ExpectedContext },
+                                    ));
                                 }
-                                break :blk true;
-                            };
-                            if (!is_equal) {
-                                @compileError(std.fmt.comptimePrint(
-                                    "Context type mismatch: State {any}\nhas context type {any}\nbut expected {any}",
-                                    .{ NextState, NextContext, ExpectedContext },
-                                ));
                             }
+
+                            states.* = states.* ++ &[_]type{NextState};
+                            state_machine_names.* = state_machine_names.* ++ &[_][]const u8{@TypeOf(NextState.info).ProtocolName};
+                            states_stack.* = states_stack.* ++ &[_]type{NextState};
+                            states_set.insert(NextState);
+
+                            reachableStatesDepthFirstSearch(states, state_machine_names, states_stack, states_set, ExpectedContext);
                         }
-
-                        states.* = states.* ++ &[_]type{NextState};
-                        state_machine_names.* = state_machine_names.* ++ &[_][]const u8{@TypeOf(NextState.info).ProtocolName};
-                        states_stack.* = states_stack.* ++ &[_]type{NextState};
-                        states_set.insert(NextState);
-
-                        reachableStatesDepthFirstSearch(states, state_machine_names, states_stack, states_set, ExpectedContext);
                     }
-                }
-            },
-            else => @compileError("Only support tagged union!"),
+                },
+                else => @compileError("Only support tagged union!"),
+            }
         }
     }
 }
