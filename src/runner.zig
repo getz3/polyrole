@@ -82,10 +82,11 @@ pub fn Runner(
                     if (comptime State == Exit) return;
 
                     const info = comptime State.info;
+                    const Info = @TypeOf(info);
                     const sender: Role = comptime info.sender;
                     const receiver: []const Role = comptime info.receiver;
-                    const internal_roles = comptime @TypeOf(info).internal_roles;
-                    const extern_state = comptime @TypeOf(info).extern_state;
+                    const internal_roles = comptime Info.internal_roles;
+                    const extern_state = comptime Info.extern_state;
 
                     if (comptime std.mem.indexOfScalar(Role, internal_roles, curr_role) == null) {
                         //curr_role does not participate in the current protocol, so it waits for notification directly.
