@@ -115,6 +115,14 @@ fn BAC(Next: type) type {
     return mk2pc(AllRole, .bob, .alice, .charlie, Context, Next, polyrole.Exit);
 }
 
+const Info = polyrole.ProtocolInfo(
+    "random_pingpong_and_2pc",
+    AllRole,
+    Context,
+    &.{ .selector, .charlie, .alice, .bob },
+    &.{},
+);
+
 pub const Start = union(enum) {
     charlie_as_coordinator: Data(void, PingPong(.alice, .bob, PingPong(.bob, .charlie, PingPong(
         .charlie,
@@ -125,13 +133,7 @@ pub const Start = union(enum) {
     bob_as_coordinator: Data(void, PingPong(.alice, .charlie, BAC(@This()).Begin).Ping),
     exit: Data(void, polyrole.Exit),
 
-    pub const info: polyrole.ProtocolInfo(
-        "random_pingpong_and_2pc",
-        AllRole,
-        Context,
-        &.{ .selector, .charlie, .alice, .bob },
-        &.{},
-    ) = .{
+    pub const info: Info = .{
         .name = "Start",
         .sender = .selector,
         .receiver = &.{ .charlie, .alice, .bob },

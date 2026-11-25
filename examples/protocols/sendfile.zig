@@ -32,10 +32,22 @@ pub fn MkSendFile(
     comptime Failed: type,
 ) type {
     return struct {
+        const Info = polyrole.ProtocolInfo(
+            "sendfile",
+            Role,
+            Context,
+            &.{ sender, receiver },
+            &.{ Successed, Failed },
+        );
+
         pub const Start = union(enum) {
             file_size: Data(u64, Send),
 
-            pub const info = sendfile_info("Start", sender, &.{receiver});
+            pub const info: Info = .{
+                .name = "Start",
+                .sender = sender,
+                .receiver = &.{receiver},
+            };
 
             pub fn process(parent_ctx: *info.Ctx(sender)) !@This() {
                 const ctx = sender_ctxFromParent(parent_ctx);
@@ -59,7 +71,11 @@ pub fn MkSendFile(
             final : Data(struct {str: []const u8, hash: u64,}, CheckHash(Successed, Failed)),
             // zig fmt: on
 
-            pub const info = sendfile_info("Send", sender, &.{receiver});
+            pub const info: Info = .{
+                .name = "Send",
+                .sender = sender,
+                .receiver = &.{receiver},
+            };
 
             pub fn process(parent_ctx: *info.Ctx(sender)) !@This() {
                 const ctx = sender_ctxFromParent(parent_ctx);
@@ -120,7 +136,11 @@ pub fn MkSendFile(
                 succeeded: Data(void, A),
                 failed: Data(void, B),
 
-                pub const info = sendfile_info("CheckHash", receiver, &.{sender});
+                pub const info: Info = .{
+                    .name = "CheckHash",
+                    .sender = receiver,
+                    .receiver = &.{sender},
+                };
 
                 pub fn process(parent_ctx: *info.Ctx(receiver)) !@This() {
                     const ctx = recver_ctxFromParent(parent_ctx);
@@ -143,20 +163,6 @@ pub fn MkSendFile(
                     }
                 }
             };
-        }
-
-        fn sendfile_info(
-            StateName: []const u8,
-            sender_: Role,
-            receiver_: []const Role,
-        ) polyrole.ProtocolInfo(
-            "sendfile",
-            Role,
-            Context,
-            &.{ sender, receiver },
-            &.{ Successed, Failed },
-        ) {
-            return .{ .name = StateName, .sender = sender_, .receiver = receiver_ };
         }
 
         fn sender_ctxFromParent(parent_ctx: *@FieldType(Context, @tagName(sender))) *SendContext {

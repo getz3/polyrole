@@ -20,19 +20,23 @@ pub fn MkPingPong(
     comptime NextFsmState: type,
 ) type {
     return struct {
-        fn pingpogn_info(
-            StateName: []const u8,
-            sender: Role,
-            receiver: []const Role,
-        ) polyrole.ProtocolInfo("pingpong", Role, Context, &.{ client, server }, &.{NextFsmState}) {
-            return .{ .name = StateName, .sender = sender, .receiver = receiver };
-        }
+        const Info = polyrole.ProtocolInfo(
+            "pingpong",
+            Role,
+            Context,
+            &.{ client, server },
+            &.{NextFsmState},
+        );
 
         pub const Ping = union(enum) {
             ping: Data(i32, Pong),
             next: Data(void, NextFsmState),
 
-            pub const info = pingpogn_info("Ping", client, &.{server});
+            pub const info: Info = .{
+                .name = "Ping",
+                .sender = client,
+                .receiver = &.{server},
+            };
 
             pub fn process(parent_ctx: *info.Ctx(client)) !@This() {
                 const ctx = client_ctxFromParent(parent_ctx);
@@ -57,7 +61,11 @@ pub fn MkPingPong(
         pub const Pong = union(enum) {
             pong: Data(i32, Ping),
 
-            pub const info = pingpogn_info("Pong", server, &.{client});
+            pub const info: Info = .{
+                .name = "Pong",
+                .sender = server,
+                .receiver = &.{client},
+            };
 
             pub fn process(parent_ctx: *info.Ctx(server)) !@This() {
                 const ctx = server_ctxFromParent(parent_ctx);

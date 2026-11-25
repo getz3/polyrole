@@ -12,24 +12,22 @@ pub fn mk2pc(
     Failed: type,
 ) type {
     return struct {
-        fn two_pc(
-            StateName: []const u8,
-            sender: Role,
-            receiver: []const Role,
-        ) polyrole.ProtocolInfo(
+        const Info = polyrole.ProtocolInfo(
             "2pc_generic",
             Role,
             Context,
             &.{ coordinator, alice, bob },
             &.{ Successed, Failed },
-        ) {
-            return .{ .name = StateName, .sender = sender, .receiver = receiver };
-        }
+        );
 
         pub const Begin = union(enum) {
             begin: Data(void, AliceResp),
 
-            pub const info = two_pc("Begin", coordinator, &.{ alice, bob });
+            pub const info: Info = .{
+                .name = "Begin",
+                .sender = coordinator,
+                .receiver = &.{ alice, bob },
+            };
 
             pub fn process(ctx: *info.Ctx(coordinator)) !@This() {
                 ctx.counter = 0;
@@ -40,7 +38,11 @@ pub fn mk2pc(
         pub const AliceResp = union(enum) {
             resp: Data(bool, BobResp),
 
-            pub const info = two_pc("AliceResp", alice, &.{coordinator});
+            pub const info: Info = .{
+                .name = "AliceResp",
+                .sender = alice,
+                .receiver = &.{coordinator},
+            };
 
             pub fn process(ctx: *info.Ctx(alice)) !@This() {
                 const random: std.Random = ctx.xoshiro256.random();
@@ -61,7 +63,11 @@ pub fn mk2pc(
             union(enum) {
                 resp: Data(bool, Check),
 
-                pub const info = two_pc("BobResp", bob, &.{coordinator});
+                pub const info: Info = .{
+                    .name = "BobResp",
+                    .sender = bob,
+                    .receiver = &.{coordinator},
+                };
 
                 pub fn process(ctx: *info.Ctx(bob)) !@This() {
                     const random: std.Random = ctx.xoshiro256.random();
@@ -83,7 +89,11 @@ pub fn mk2pc(
             failed: Data(void, Failed),
             failed_retry: Data(void, Begin),
 
-            pub const info = two_pc("Check", coordinator, &.{ alice, bob });
+            pub const info: Info = .{
+                .name = "Check",
+                .sender = coordinator,
+                .receiver = &.{ alice, bob },
+            };
 
             pub fn process(ctx: *info.Ctx(coordinator)) !@This() {
                 if (ctx.counter == 2) {
