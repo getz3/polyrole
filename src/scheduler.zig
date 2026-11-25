@@ -197,7 +197,7 @@ test "RoleRunner" {
             PingPong,
             Context,
             &.{ .a, .b },
-            &.{root.Exit},
+            &.{},
         );
 
         const Ping = union(enum) {
