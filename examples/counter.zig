@@ -67,18 +67,22 @@ const Context = struct {
     d: i32,
 };
 
-fn mk_info(
-    StateName: []const u8,
-) polyrole.ProtocolInfo("counter", Role, Context, &.{.a}, &.{}) {
-    //`internal_roles` is 1, which is equivalent to `polystate`.
-    return .{ .name = StateName, .sender = .a, .receiver = &.{} };
-}
+const Info = polyrole.ProtocolInfo(
+    "counter",
+    Role,
+    Context,
+    &.{.a},
+);
 
 const A = union(enum) {
     to_b: Data(void, B),
     exit: Data(void, polyrole.Exit),
 
-    pub const info = mk_info("A");
+    pub const info: Info = .{
+        .name = "A",
+        .sender = .a,
+        .receiver = &.{},
+    };
 
     pub fn process(ctx: *i32) !@This() {
         std.debug.print("ctx: {d}\n", .{ctx.*});
@@ -89,7 +93,11 @@ const A = union(enum) {
 const B = union(enum) {
     to_b: Data(void, A),
 
-    pub const info = mk_info("B");
+    pub const info: Info = .{
+        .name = "B",
+        .sender = .a,
+        .receiver = &.{},
+    };
 
     pub fn process(ctx: *i32) !@This() {
         ctx.* += 1;

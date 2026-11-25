@@ -34,7 +34,6 @@ pub fn ProtocolInfo(
     comptime Role_: type,
     comptime Context_: type,
     comptime internal_roles_: []const Role_,
-    comptime extern_state_: []const type,
 ) type {
     comptime {
         switch (@typeInfo(Role_)) {
@@ -58,7 +57,6 @@ pub fn ProtocolInfo(
         pub const Role = Role_;
         pub const Context = Context_;
         pub const internal_roles: []const Role_ = internal_roles_;
-        pub const extern_state: []const type = extern_state_;
 
         pub fn Ctx(_: @This(), r: Role_) type {
             return @FieldType(Context_, @tagName(r));

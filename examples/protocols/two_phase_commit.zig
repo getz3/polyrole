@@ -17,7 +17,6 @@ pub fn mk2pc(
             Role,
             Context,
             &.{ coordinator, alice, bob },
-            &.{ Successed, Failed },
         );
 
         pub const Begin = union(enum) {

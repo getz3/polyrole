@@ -17,7 +17,7 @@ const Pong = union(enum) {
 };
 ```
 
-Every state also carries `info`: `sender` and `receiver`, while `@TypeOf(info)` holds the protocol-wide `internal_roles` and `extern_state`.
+Every state also carries `info`: `sender` and `receiver`, while `@TypeOf(info)` holds the protocol-wide `internal_roles`.
 
 ## How a Role Runs
 
@@ -35,7 +35,7 @@ The protocol does not depend on networking: `simulate` runs every role in one th
 
 A state with more than one union field is a branch, and only the sender knows which one was chosen. The library therefore requires `1 + receiver.len == internal_roles.len`: every other internal role must receive the message, so none can miss the new state.
 
-When the next state is in `extern_state` (or is `Exit`), `internal_roles[0]` sends `Notify` to every role outside `internal_roles`, and those roles jump to the new state. Protocol hand-over stays synchronized without polling.
+When the next state belongs to another protocol, `internal_roles[0]` sends `Notify` to every role outside `internal_roles`, and those roles jump to the new state. Protocol hand-over stays synchronized without polling.
 
 ## Composition
 

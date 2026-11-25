@@ -120,7 +120,6 @@ const Info = polyrole.ProtocolInfo(
     AllRole,
     Context,
     &.{ .selector, .charlie, .alice, .bob },
-    &.{},
 );
 
 pub const Start = union(enum) {

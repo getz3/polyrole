@@ -28,8 +28,8 @@ pub fn Runner(
         ///in the current state execute nothing, just like in `symmetric_run`.
         ///
         ///`Notify` plays no part here. `symmetric_run` uses it to tell the roles
-        ///outside `internal_roles` which state to jump to when the protocol ends or
-        ///hands over to an `extern_state`; here every role shares the same loop and
+        ///outside `internal_roles` which state to jump to when the next state
+        ///belongs to another protocol; here every role shares the same loop and
         ///the same `curr_id`, so that hand-over is simply the next iteration and no
         ///role is left waiting. What `simulate` drops is the notification, not the
         ///synchronization it stands for: it follows a single execution path, so it
@@ -86,7 +86,6 @@ pub fn Runner(
                     const sender: Role = comptime info.sender;
                     const receiver: []const Role = comptime info.receiver;
                     const internal_roles = comptime Info.internal_roles;
-                    const extern_state = comptime Info.extern_state;
 
                     if (comptime std.mem.indexOfScalar(Role, internal_roles, curr_role) == null) {
                         //curr_role does not participate in the current protocol, so it waits for notification directly.
@@ -107,11 +106,12 @@ pub fn Runner(
                         switch (result) {
                             inline else => |next| {
                                 const NewState = @TypeOf(next).State;
+                                const NextInfo = @TypeOf(NewState.info);
                                 const notify_roles = comptime extern_targets(
                                     curr_role,
-                                    NewState,
+                                    Info,
+                                    NextInfo,
                                     internal_roles,
-                                    extern_state,
                                 );
                                 for (notify_roles) |target_role| {
                                     try channels.send(curr_role, target_role, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
@@ -134,11 +134,12 @@ pub fn Runner(
                             switch (result) {
                                 inline else => |next| {
                                     const NewState = @TypeOf(next).State;
+                                    const NextInfo = @TypeOf(NewState.info);
                                     const notify_roles = comptime extern_targets(
                                         curr_role,
-                                        NewState,
+                                        Info,
+                                        NextInfo,
                                         internal_roles,
-                                        extern_state,
                                     );
                                     for (notify_roles) |target_role| {
                                         try channels.send(curr_role, target_role, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
@@ -153,11 +154,12 @@ pub fn Runner(
                                     // However, it still needs to check whether to notify external roles.
                                     comptime std.debug.assert(U.field_names.len == 1);
                                     const NewState = U.field_types[0].State;
+                                    const NextInfo = @TypeOf(NewState.info);
                                     const notify_roles = comptime extern_targets(
                                         curr_role,
-                                        NewState,
+                                        Info,
+                                        NextInfo,
                                         internal_roles,
-                                        extern_state,
                                     );
                                     for (notify_roles) |target_role| {
                                         try channels.send(curr_role, target_role, state_id, Notify{ .polyrole_notify = @backingInt(idFromState(NewState)) });
@@ -208,10 +210,10 @@ pub fn Runner(
                             };
 
                             const info = comptime State.info;
+                            const Info = @TypeOf(info);
                             const sender: Role = comptime info.sender;
                             const receiver: []const Role = comptime info.receiver;
-                            const internal_roles = comptime @TypeOf(info).internal_roles;
-                            const extern_state = comptime @TypeOf(info).extern_state;
+                            const internal_roles = comptime Info.internal_roles;
 
                             switch (resume_from) {
                                 .continue_recv => |received| {
@@ -225,11 +227,12 @@ pub fn Runner(
                                         switch (result) {
                                             inline else => |next| {
                                                 const NewState = @TypeOf(next).State;
+                                                const NextInfo = @TypeOf(NewState.info);
                                                 const notify_roles = comptime extern_targets(
                                                     curr_role,
-                                                    NewState,
+                                                    Info,
+                                                    NextInfo,
                                                     internal_roles,
-                                                    extern_state,
                                                 );
                                                 const new_state_id: u32 = @backingInt(idFromState(NewState));
                                                 return .{ .curr_id = raw_state_id, .action = .{
@@ -257,11 +260,12 @@ pub fn Runner(
                                         switch (result) {
                                             inline else => |next| {
                                                 const NewState = @TypeOf(next).State;
+                                                const NextInfo = @TypeOf(NewState.info);
                                                 const notify_roles = comptime extern_targets(
                                                     curr_role,
-                                                    NewState,
+                                                    Info,
+                                                    NextInfo,
                                                     internal_roles,
-                                                    extern_state,
                                                 );
                                                 const new_state_id: u32 = @backingInt(idFromState(NewState));
 
@@ -286,11 +290,12 @@ pub fn Runner(
                                                 .@"union" => |U| {
                                                     comptime std.debug.assert(U.field_names.len == 1);
                                                     const NewState = U.field_types[0].State;
+                                                    const NextInfo = @TypeOf(NewState.info);
                                                     const notify_roles = comptime extern_targets(
                                                         curr_role,
-                                                        NewState,
+                                                        Info,
+                                                        NextInfo,
                                                         internal_roles,
-                                                        extern_state,
                                                     );
                                                     const new_state_id: u32 = @backingInt(idFromState(NewState));
                                                     return .{ .curr_id = raw_state_id, .action = .{
@@ -324,15 +329,13 @@ pub fn Runner(
 
         fn extern_targets(
             comptime curr_role: Role,
-            comptime NewState: type,
+            comptime Info: type,
+            comptime NextInfo: type,
             comptime internal_roles: []const Role,
-            comptime extern_state: []const type,
         ) []const Role {
-            //Checks if the new state is an external state (or `Exit`, since the end of a protocol
-            //must be synchronized too) and the current role is `internal_roles[0]`.
-            if ((comptime std.mem.indexOfScalar(type, extern_state, NewState) != null or NewState == Exit) and
-                curr_role == internal_roles[0])
-            {
+            //Checks if the next state belongs to another protocol and the current role
+            //is `internal_roles[0]`.
+            if (Info != NextInfo and curr_role == internal_roles[0]) {
                 //It turns out that all roles that do not belong to internal_roles must be notified.
                 //This is equivalent to synchronizing the status once each protocol ends.
                 var targets: []const Role = &.{};

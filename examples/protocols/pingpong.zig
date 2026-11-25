@@ -25,7 +25,6 @@ pub fn MkPingPong(
             Role,
             Context,
             &.{ client, server },
-            &.{NextFsmState},
         );
 
         pub const Ping = union(enum) {

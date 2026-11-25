@@ -37,7 +37,6 @@ pub fn MkSendFile(
             Role,
             Context,
             &.{ sender, receiver },
-            &.{ Successed, Failed },
         );
 
         pub const Start = union(enum) {
