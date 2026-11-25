@@ -3,10 +3,18 @@ const polyrole = @import("root.zig");
 
 arena: std.heap.ArenaAllocator,
 name: []const u8,
-nodes: std.ArrayListUnmanaged(Node),
+clusters: ProtocolClusterMap,
 edges: std.ArrayListUnmanaged(Edge),
 
 const Graph = @This();
+
+///All states that belong to one protocol, rendered as one subgraph.
+const ProtocolCluster = struct {
+    label: []const u8,
+    nodes: std.ArrayList(Node),
+};
+
+const ProtocolClusterMap = std.AutoHashMap(u64, ProtocolCluster);
 
 const colors: []const []const u8 = &.{
     "red",       "green",    "blue",
@@ -20,7 +28,6 @@ pub const Node = struct {
     state_description: []const u8,
     id: u32,
     sender: []const u8,
-    fsm_description: []const u8,
 };
 
 pub const Edge = struct {
@@ -46,48 +53,34 @@ pub fn generateDot(
             \\
         );
 
-        // Create subgraphs for each FSM's nodes
-        var cluster_idx: u32 = 0;
-        var current_fsm_name: ?[]const u8 = null;
+        var cluster_iter = self.clusters.iterator();
+        while (cluster_iter.next()) |entry| {
+            const cluster_id = entry.key_ptr.*;
+            const cluster = entry.value_ptr;
 
-        for (self.nodes.items) |node| {
-            // Start new FSM subgraph if needed
-            if (current_fsm_name == null or !std.mem.eql(u8, current_fsm_name.?, node.fsm_description)) {
-                // Close previous subgraph if any
-                if (current_fsm_name != null) {
-                    try writer.writeAll(
-                        \\    }
-                        \\
-                    );
-                    cluster_idx += 1;
-                }
+            // Start new subgraph
+            try writer.print(
+                \\    subgraph cluster_fsm_{d} {{
+                \\      label = "{s}";
+                \\
+            , .{ cluster_id, cluster.label });
 
-                // Start new subgraph
-                current_fsm_name = node.fsm_description;
+            for (cluster.nodes.items) |node| {
+                // Add the state to its protocol cluster
                 try writer.print(
-                    \\    subgraph cluster_fsm_{d} {{
-                    \\      label = "{s}";
+                    \\      {d}[shape=rect,  label="{s}[{d}] {s}", color = "{s}"];
                     \\
-                , .{ cluster_idx, node.fsm_description });
+                ,
+                    .{
+                        node.id,
+                        if (emoj_map) |map| map.get(node.sender) orelse "" else "",
+                        node.id,
+                        node.state_description,
+                        colors[@as(usize, @intCast(node.id)) % colors.len],
+                    },
+                );
             }
 
-            // Add node to current FSM subgraph
-            try writer.print(
-                \\      {d}[shape=rect,  label="{s}[{d}] {s}", color = "{s}"];
-                \\
-            ,
-                .{
-                    node.id,
-                    if (emoj_map) |map| map.get(node.sender) orelse "" else "",
-                    node.id,
-                    node.state_description,
-                    colors[@as(usize, @intCast(node.id)) % colors.len],
-                },
-            );
-        }
-
-        // Close last subgraph
-        if (current_fsm_name != null) {
             try writer.writeAll(
                 \\    }
                 \\
@@ -130,13 +123,15 @@ pub fn initWithFsm(allocator: std.mem.Allocator, comptime State_: type) !Graph {
 
     const arena_allocator = arena.allocator();
 
-    var nodes: std.ArrayListUnmanaged(Node) = .empty;
+    var clusters: ProtocolClusterMap = .init(arena_allocator);
     var edges: std.ArrayListUnmanaged(Edge) = .empty;
 
     const state_map: polyrole.StateMap = comptime .init(State_);
 
-    inline for (state_map.states, state_map.state_machine_names, 0..) |State, fsm_name, state_idx| {
-        try nodes.append(arena_allocator, .{
+    inline for (state_map.states, 0..) |State, state_idx| {
+        const info_type_name = @typeName(@TypeOf(State.info));
+        const cluster_key = std.hash_map.hashString(info_type_name);
+        const node: Node = .{
             .state_description = if (State == polyrole.Exit) "Exit" else try std.fmt.allocPrint(
                 arena_allocator,
                 "{s} .{t} -> {any}",
@@ -144,12 +139,24 @@ pub fn initWithFsm(allocator: std.mem.Allocator, comptime State_: type) !Graph {
             ),
             .id = @intCast(state_idx),
             .sender = if (State == polyrole.Exit) "" else try std.fmt.allocPrint(arena_allocator, "{t}", .{State.info.sender}),
-            .fsm_description = if (State == polyrole.Exit) fsm_name else try std.fmt.allocPrint(
-                arena_allocator,
-                "{s}: {any}",
-                .{ fsm_name, @TypeOf(State.info).internal_roles },
-            ),
-        });
+        };
+
+        if (clusters.getPtr(cluster_key)) |cluster| {
+            try cluster.nodes.append(arena_allocator, node);
+        } else {
+            var cluster_nodes: std.ArrayList(Node) = .empty;
+            try cluster_nodes.append(arena_allocator, node);
+
+            const protocol_name = @TypeOf(State.info).ProtocolName;
+            try clusters.put(cluster_key, .{
+                .label = if (State == polyrole.Exit) protocol_name else try std.fmt.allocPrint(
+                    arena_allocator,
+                    "{s}: {any}",
+                    .{ protocol_name, @TypeOf(State.info).internal_roles },
+                ),
+                .nodes = cluster_nodes,
+            });
+        }
 
         switch (@typeInfo(State)) {
             .@"union" => |un| {
@@ -169,20 +176,11 @@ pub fn initWithFsm(allocator: std.mem.Allocator, comptime State_: type) !Graph {
         }
     }
 
-    // Sort nodes by FSM name
-    std.mem.sort(Node, nodes.items, {}, struct {
-        pub fn lessThan(_: void, lhs: Node, rhs: Node) bool {
-            const cmp = std.mem.order(u8, lhs.fsm_description, rhs.fsm_description);
-            if (cmp != .eq) return cmp == .lt;
-            return lhs.id < rhs.id;
-        }
-    }.lessThan);
-
     return .{
         .arena = arena,
         .edges = edges,
         .name = @TypeOf(State_.info).ProtocolName,
-        .nodes = nodes,
+        .clusters = clusters,
     };
 }
 
