@@ -104,25 +104,21 @@ fn TypeSet(comptime bucket_count: usize) type {
     };
 }
 
-pub fn reachableStates(comptime State: type) struct { states: []const type, state_machine_names: []const []const u8 } {
+pub fn reachableStates(comptime State: type) struct { states: []const type } {
     comptime {
-        var states: []const type = &.{State};
-        var state_machine_names: []const []const u8 = &.{@TypeOf(State.info).ProtocolName};
         var states_stack: []const type = &.{State};
         var states_set: TypeSet(128) = .init;
         const ExpectedContext = @TypeOf(State.info).Context;
 
         states_set.insert(State);
 
-        reachableStatesDepthFirstSearch(&states, &state_machine_names, &states_stack, &states_set, ExpectedContext);
+        reachableStatesDepthFirstSearch(&states_stack, &states_set, ExpectedContext);
 
-        return .{ .states = states, .state_machine_names = state_machine_names };
+        return .{ .states = states_stack };
     }
 }
 
 fn reachableStatesDepthFirstSearch(
-    comptime states: *[]const type,
-    comptime state_machine_names: *[]const []const u8,
     comptime states_stack: *[]const type,
     comptime states_set: *TypeSet(128),
     comptime ExpectedContext: anytype, //Context type
@@ -135,7 +131,6 @@ fn reachableStatesDepthFirstSearch(
         }
 
         const CurrentState = states_stack.*[states_stack.len - 1];
-        states_stack.* = states_stack.*[0 .. states_stack.len - 1];
 
         if (CurrentState != Exit) {
             const info = CurrentState.info;
@@ -227,12 +222,10 @@ fn reachableStatesDepthFirstSearch(
                                 }
                             }
 
-                            states.* = states.* ++ &[_]type{NextState};
-                            state_machine_names.* = state_machine_names.* ++ &[_][]const u8{@TypeOf(NextState.info).ProtocolName};
                             states_stack.* = states_stack.* ++ &[_]type{NextState};
                             states_set.insert(NextState);
 
-                            reachableStatesDepthFirstSearch(states, state_machine_names, states_stack, states_set, ExpectedContext);
+                            reachableStatesDepthFirstSearch(states_stack, states_set, ExpectedContext);
                         }
                     }
                 },
@@ -244,7 +237,6 @@ fn reachableStatesDepthFirstSearch(
 
 pub const StateMap = struct {
     states: []const type,
-    state_machine_names: []const []const u8,
     StateId: type,
 
     pub fn init(comptime State_: type) StateMap {
@@ -256,7 +248,6 @@ pub const StateMap = struct {
 
             return .{
                 .states = result.states,
-                .state_machine_names = result.state_machine_names,
                 .StateId = @Enum(
                     TagInt,
                     .exhaustive,
