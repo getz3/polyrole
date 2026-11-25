@@ -192,29 +192,24 @@ test "RoleRunner" {
         const PingPong = enum { a, b };
         const Context = struct { a: u32, b: void };
 
-        fn pingpong_info(
-            StateName: []const u8,
-            sender: PingPong,
-            receiver: []const PingPong,
-        ) root.ProtocolInfo(
+        const Info = root.ProtocolInfo(
             "pingpong",
             PingPong,
             Context,
             &.{ .a, .b },
             &.{root.Exit},
-        ) {
-            return .{
-                .name = StateName,
-                .sender = sender,
-                .receiver = receiver,
-            };
-        }
+        );
 
         const Ping = union(enum) {
             ping: Data(void, Pong),
             next: Data(void, root.Exit),
 
-            pub const info = pingpong_info("Ping", .a, &.{.b});
+            pub const info: Info =
+                .{
+                    .name = "Ping",
+                    .sender = .a,
+                    .receiver = &.{.b},
+                };
 
             pub fn process(ctx: *info.Ctx(.a)) !@This() {
                 if (ctx.* >= 10) {
@@ -227,7 +222,12 @@ test "RoleRunner" {
         const Pong = union(enum) {
             pong: Data(void, Ping),
 
-            pub const info = pingpong_info("Ping", .b, &.{.a});
+            pub const info: Info =
+                .{
+                    .name = "Pong",
+                    .sender = .b,
+                    .receiver = &.{.a},
+                };
 
             pub fn process(_: *info.Ctx(.b)) !@This() {
                 return .pong;
