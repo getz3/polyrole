@@ -43,10 +43,20 @@ pub const Context = struct {
 };
 
 fn SendFile(Successed: type, Failed: type) type {
-    return sendfile.MkSendFile(Role, .alice, .bob, Context, 20 * 1024 * 1024, .send_context, .recv_context, Successed, Failed);
+    return sendfile.MkSendFile(
+        Role,
+        .alice,
+        .bob,
+        Context,
+        20 * 1024 * 1024,
+        .send_context,
+        .recv_context,
+        Successed,
+        Failed,
+    );
 }
 
-pub const EnterFsmState = SendFile(polyrole.Exit, polyrole.Exit).Start;
+pub const EnterFsmState = SendFile(polyrole.Exit, polyrole.Exit).Send;
 
 pub const Runner = polyrole.Runner(EnterFsmState);
 pub const curr_id = Runner.idFromState(EnterFsmState);
@@ -141,7 +151,6 @@ pub fn main(init: std.process.Init) !void {
     var server_context: AliceContext = .{
         .send_context = .{
             .reader = &file_reader.interface,
-            .file_size = (try read_file.stat(io)).size,
         },
     };
 

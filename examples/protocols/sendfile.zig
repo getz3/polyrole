@@ -5,17 +5,12 @@ const Data = polyrole.Data;
 pub const SendContext = struct {
     send_buff: [1024 * 4]u8 = @splat(0),
     reader: *std.Io.Reader,
-    file_size: u64,
-
     send_size: usize = 0,
     hasher: std.hash.XxHash3 = std.hash.XxHash3.init(0),
 };
 
 pub const RecvContext = struct {
     writer: *std.Io.Writer,
-    total: u64 = 0,
-    recved: u64 = 0,
-
     recved_hash: ?u64 = null,
     hasher: std.hash.XxHash3 = std.hash.XxHash3.init(0),
 };
@@ -38,30 +33,6 @@ pub fn MkSendFile(
             Context,
             &.{ sender, receiver },
         );
-
-        pub const Start = union(enum) {
-            file_size: Data(u64, Send),
-
-            pub const info: Info = .{
-                .name = "Start",
-                .sender = sender,
-                .receiver = &.{receiver},
-            };
-
-            pub fn process(parent_ctx: *info.Ctx(sender)) !@This() {
-                const ctx = sender_ctxFromParent(parent_ctx);
-                return .{ .file_size = .{ .data = ctx.file_size } };
-            }
-
-            pub fn preprocess_0(parent_ctx: *info.Ctx(receiver), msg: @This()) !void {
-                const ctx = recver_ctxFromParent(parent_ctx);
-                switch (msg) {
-                    .file_size => |val| {
-                        ctx.total = val.data;
-                    },
-                }
-            }
-        };
 
         pub const Send = union(enum) {
             // zig fmt: off
@@ -86,45 +57,36 @@ pub fn MkSendFile(
                 }
 
                 const n = try ctx.reader.readSliceShort(&ctx.send_buff);
+                ctx.send_size += n;
 
                 if (n < ctx.send_buff.len) {
                     ctx.hasher.update(ctx.send_buff[0..n]);
-                    ctx.send_size += n;
-                    return .{ .final = .{ .data = .{ .str = ctx.send_buff[0..n], .hash = ctx.hasher.final() } } };
+                    return .{ .final = .{ .data = .{
+                        .str = ctx.send_buff[0..n],
+                        .hash = ctx.hasher.final(),
+                    } } };
                 } else {
                     ctx.hasher.update(&ctx.send_buff);
-                    ctx.send_size += ctx.send_buff.len;
                     return .{ .send = .{ .data = &ctx.send_buff } };
                 }
             }
 
             pub fn preprocess_0(parent_ctx: *info.Ctx(receiver), msg: @This()) !void {
                 const ctx = recver_ctxFromParent(parent_ctx);
-                var size: usize = 0;
                 switch (msg) {
                     .send => |val| {
-                        size = val.data.len;
-                        ctx.recved += val.data.len;
                         ctx.hasher.update(val.data);
                         try ctx.writer.writeAll(val.data);
                     },
                     .final => |val| {
                         ctx.recved_hash = val.data.hash;
                         const str = val.data.str;
-                        size = str.len;
-                        ctx.recved += str.len;
                         ctx.hasher.update(str);
                         try ctx.writer.writeAll(str);
                         try ctx.writer.flush();
-
-                        std.debug.print("recv: final {Bi}, {d:.4}\n", .{
-                            size,
-                            @as(f32, @floatFromInt(ctx.recved)) / @as(f32, @floatFromInt(ctx.total)),
-                        });
                     },
                     .check => |val| {
                         ctx.recved_hash = val.data;
-                        std.debug.print("recv: check, hash: {d}\n", .{val.data});
                     },
                 }
             }
@@ -146,10 +108,9 @@ pub fn MkSendFile(
                     const curr_hash = ctx.hasher.final();
                     ctx.hasher = std.hash.XxHash3.init(0);
                     if (curr_hash == ctx.recved_hash) {
-                        std.debug.print("check succeeded \n", .{});
+                        std.debug.print("successed: {d}\n", .{curr_hash});
                         return .{ .succeeded = .{ .data = {} } };
                     } else {
-                        std.debug.print("check failed \n", .{});
                         return .{ .failed = .{ .data = {} } };
                     }
                 }
