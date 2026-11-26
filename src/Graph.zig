@@ -85,6 +85,11 @@ pub fn generateDot(
             );
         }
 
+        try writer.writeAll(
+            \\  }
+            \\
+        );
+
         // Add edges
         for (self.edges.items) |edge| {
             try writer.print(
@@ -98,11 +103,6 @@ pub fn generateDot(
                 colors[@as(usize, @intCast(edge.from)) % colors.len],
             });
         }
-
-        try writer.writeAll(
-            \\  }
-            \\
-        );
     }
 
     try writer.writeAll(
