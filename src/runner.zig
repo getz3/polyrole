@@ -5,6 +5,55 @@ const StateMap = root.StateMap;
 const Exit = root.Exit;
 const Notify = root.Notify;
 
+///One step of a role's state machine, as seen by the scheduler: the state the
+///role was in, plus the messages it needs to send or receive next.
+pub const Outcome = struct {
+    curr_id: u32,
+    action: union(enum) {
+        done: void,
+        recv_notify_from_role: u32,
+        send_result: struct {
+            result: []const u8,
+            receiver_roles: []const u32,
+            new_state_id: u32,
+            notify_roles: []const u32,
+        },
+        recv_result_from_role: u32,
+        send_notify: struct {
+            new_state_id: u32,
+            notify_roles: []const u32,
+        },
+    },
+
+    pub fn format(self: @This(), w: *std.Io.Writer) !void {
+        try w.print("Outcome{{ curr_id: {d}, action: ", .{self.curr_id});
+        switch (self.action) {
+            .done => try w.writeAll("done"),
+            .recv_notify_from_role => |role| try w.print("recv_notify_from_role({d})", .{role}),
+            .recv_result_from_role => |role| try w.print("recv_result_from_role({d})", .{role}),
+            .send_notify => |notify| try w.print("send_notify{{ new_state_id: {d}, notify_roles: {any} }}", .{ notify.new_state_id, notify.notify_roles }),
+            .send_result => |send| {
+                try w.print("send_result{{ receiver_roles: {any}, new_state_id: {d}, notify_roles: {any}, result: {d} bytes }}", .{
+                    send.receiver_roles,
+                    send.new_state_id,
+                    send.notify_roles,
+                    send.result.len,
+                });
+            },
+        }
+        try w.writeAll(" }");
+    }
+};
+
+///Where a role's runner should pick up: a fresh state, or an already received
+///payload that still needs decoding and preprocessing.
+pub const Resume = union(enum) {
+    start: void,
+    continue_recv: struct {
+        payload: []const u8,
+    },
+};
+
 pub fn Runner(
     comptime State_: type,
 ) type {
@@ -351,52 +400,3 @@ pub fn Runner(
         }
     };
 }
-
-///One step of a role's state machine, as seen by the scheduler: the state the
-///role was in, plus the messages it needs to send or receive next.
-pub const Outcome = struct {
-    curr_id: u32,
-    action: union(enum) {
-        done: void,
-        recv_notify_from_role: u32,
-        send_result: struct {
-            result: []const u8,
-            receiver_roles: []const u32,
-            new_state_id: u32,
-            notify_roles: []const u32,
-        },
-        recv_result_from_role: u32,
-        send_notify: struct {
-            new_state_id: u32,
-            notify_roles: []const u32,
-        },
-    },
-
-    pub fn format(self: @This(), w: *std.Io.Writer) !void {
-        try w.print("Outcome{{ curr_id: {d}, action: ", .{self.curr_id});
-        switch (self.action) {
-            .done => try w.writeAll("done"),
-            .recv_notify_from_role => |role| try w.print("recv_notify_from_role({d})", .{role}),
-            .recv_result_from_role => |role| try w.print("recv_result_from_role({d})", .{role}),
-            .send_notify => |notify| try w.print("send_notify{{ new_state_id: {d}, notify_roles: {any} }}", .{ notify.new_state_id, notify.notify_roles }),
-            .send_result => |send| {
-                try w.print("send_result{{ receiver_roles: {any}, new_state_id: {d}, notify_roles: {any}, result: {d} bytes }}", .{
-                    send.receiver_roles,
-                    send.new_state_id,
-                    send.notify_roles,
-                    send.result.len,
-                });
-            },
-        }
-        try w.writeAll(" }");
-    }
-};
-
-///Where a role's runner should pick up: a fresh state, or an already received
-///payload that still needs decoding and preprocessing.
-pub const Resume = union(enum) {
-    start: void,
-    continue_recv: struct {
-        payload: []const u8,
-    },
-};
