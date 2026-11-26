@@ -38,7 +38,6 @@ pub const Edge = struct {
 
 pub fn generateDot(
     self: @This(),
-    emoj_map: ?*std.StringHashMap([]const u8),
     writer: anytype,
 ) !void {
     try writer.writeAll(
@@ -68,12 +67,11 @@ pub fn generateDot(
             for (cluster.nodes.items) |node| {
                 // Add the state to its protocol cluster
                 try writer.print(
-                    \\      {d}[shape=rect,  label="{s}[{d}] {s}", color = "{s}"];
+                    \\      {d}[shape=rect,  label="[{d}] {s}", color = "{s}"];
                     \\
                 ,
                     .{
                         node.id,
-                        if (emoj_map) |map| map.get(node.sender) orelse "" else "",
                         node.id,
                         node.state_description,
                         colors[@as(usize, @intCast(node.id)) % colors.len],

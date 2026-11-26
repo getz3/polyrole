@@ -118,9 +118,9 @@ pub fn addGraphFile(
         \\  const writer = &stdout_writer.interface;
         \\  defer writer.flush() catch @panic("Failed to flush");
         \\
-        \\  try graph.{s}(null, writer);
+        \\  try graph.generateDot(writer);
         \\}}
-    , .{ module_name, "generateDot" }) catch @panic("OOM");
+    , .{module_name}) catch @panic("OOM");
 
     const options = b.addOptions();
     options.contents = writer.toArrayList();
