@@ -122,15 +122,15 @@ pub const Prototype = struct {
                         try self.actions.pushBack(gpa, action);
                     }
                 },
-                .recv_result_from_role => |role| {
-                    if (role_ctx.inbox.items[@intCast(role)].popFront()) |message| {
+                .recv_result => |recv| {
+                    if (role_ctx.inbox.items[@intCast(recv.from_role)].popFront()) |message| {
                         defer gpa.free(message);
-                        @memcpy(role_ctx.buffer[0..message.len], message);
+                        @memcpy(recv.buff[0..message.len], message);
                         try self.actions.pushBack(gpa, .{
                             .key = key,
                             .state_id = curr_id,
                             .resume_from = .{ .continue_recv = .{
-                                .payload = role_ctx.buffer[0..message.len],
+                                .payload = recv.buff[0..message.len],
                             } },
                         });
                     } else {

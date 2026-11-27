@@ -18,7 +18,10 @@ pub const Outcome = struct {
             new_state_id: u32,
             notify_roles: []const u32,
         },
-        recv_result_from_role: u32,
+        recv_result: struct {
+            from_role: u32,
+            buff: []u8,
+        },
         send_notify: struct {
             new_state_id: u32,
             notify_roles: []const u32,
@@ -332,7 +335,12 @@ pub fn Runner(
                                         if (comptime std.mem.indexOfScalar(Role, receiver, curr_role)) |_| {
                                             return .{
                                                 .curr_id = raw_state_id,
-                                                .action = .{ .recv_result_from_role = @backingInt(sender) },
+                                                .action = .{
+                                                    .recv_result = .{
+                                                        .from_role = @backingInt(sender),
+                                                        .buff = buffer,
+                                                    },
+                                                },
                                             };
                                         } else {
                                             switch (@typeInfo(State)) {
