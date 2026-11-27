@@ -33,11 +33,11 @@ pub const Outcome = struct {
             .recv_result_from_role => |role| try w.print("recv_result_from_role({d})", .{role}),
             .send_notify => |notify| try w.print("send_notify{{ new_state_id: {d}, notify_roles: {any} }}", .{ notify.new_state_id, notify.notify_roles }),
             .send_result => |send| {
-                try w.print("send_result{{ receiver_roles: {any}, new_state_id: {d}, notify_roles: {any}, result: {d} bytes }}", .{
+                try w.print("send_result{{ receiver_roles: {any}, result: {d} bytes, new_state_id: {d}, notify_roles: {any} }}", .{
                     send.receiver_roles,
+                    send.result.len,
                     send.new_state_id,
                     send.notify_roles,
-                    send.result.len,
                 });
             },
         }
