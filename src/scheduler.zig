@@ -108,15 +108,16 @@ pub const Prototype = struct {
             const curr_id = outcome.curr_id;
             switch (outcome.action) {
                 .done => {},
-                .recv_notify_from_role => |role| {
-                    if (role_ctx.inbox.items[@intCast(role)].popFront()) |message| {
+                .recv_notify => |recv| {
+                    if (role_ctx.inbox.items[@intCast(recv.from_role)].popFront()) |message| {
                         defer gpa.free(message);
-                        var reader = std.Io.Reader.fixed(message);
-                        const notify = try Codec.decode(&reader, curr_id, Notify);
+                        @memcpy(recv.buff[0..message.len], message);
                         try self.actions.pushBack(gpa, .{
                             .key = key,
-                            .state_id = notify.polyrole_notify,
-                            .resume_from = .start,
+                            .state_id = curr_id,
+                            .resume_from = .{ .continue_notify = .{
+                                .payload = recv.buff[0..message.len],
+                            } },
                         });
                     } else {
                         try self.actions.pushBack(gpa, action);

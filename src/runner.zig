@@ -11,7 +11,14 @@ pub const Outcome = struct {
     curr_id: u32,
     action: union(enum) {
         done: void,
-        recv_notify_from_role: u32,
+        send_notify: struct {
+            new_state_id: u32,
+            notify_roles: []const u32,
+        },
+        recv_notify: struct {
+            from_role: u32,
+            buff: []u8,
+        },
         send_result: struct {
             result: []const u8,
             receiver_roles: []const u32,
@@ -21,10 +28,6 @@ pub const Outcome = struct {
         recv_result: struct {
             from_role: u32,
             buff: []u8,
-        },
-        send_notify: struct {
-            new_state_id: u32,
-            notify_roles: []const u32,
         },
     },
 
@@ -52,6 +55,9 @@ pub const Outcome = struct {
 ///payload that still needs decoding and preprocessing.
 pub const Resume = union(enum) {
     start: void,
+    continue_notify: struct {
+        payload: []const u8,
+    },
     continue_recv: struct {
         payload: []const u8,
     },
@@ -268,6 +274,11 @@ pub fn Runner(
                             const internal_roles = comptime Info.internal_roles;
 
                             switch (resume_from) {
+                                .continue_notify => |recv| {
+                                    var reader = std.Io.Reader.fixed(recv.payload);
+                                    const result = try Codec.decode(&reader, state_id, Notify);
+                                    return run(ctx, buffer, result.polyrole_notify, .start);
+                                },
                                 .continue_recv => |received| {
                                     var reader = std.Io.Reader.fixed(received.payload);
                                     const result = try Codec.decode(&reader, state_id, State);
@@ -303,7 +314,12 @@ pub fn Runner(
                                     if (comptime std.mem.indexOfScalar(Role, internal_roles, curr_role) == null) {
                                         return .{
                                             .curr_id = raw_state_id,
-                                            .action = .{ .recv_notify_from_role = @backingInt(internal_roles[0]) },
+                                            .action = .{
+                                                .recv_notify = .{
+                                                    .from_role = @backingInt(internal_roles[0]),
+                                                    .buff = buffer,
+                                                },
+                                            },
                                         };
                                     } else if (comptime curr_role == sender) {
                                         const result = try State.process(ctx);
